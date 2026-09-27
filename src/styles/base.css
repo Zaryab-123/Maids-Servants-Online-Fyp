@@ -1,0 +1,206 @@
+/* ==========================================================================
+   Base: reproduces React Native's layout model in the browser so every
+   original StyleSheet value (flex, borders, spacing) renders faithfully.
+   ========================================================================== */
+:root {
+  --brand: #1E64D3;
+  --brand-dark: #1550B0;
+  --brand-deep: #2C437E;
+  --brand-soft: #EAF2FF;
+  --ink: #0F172A;
+  --ink-2: #1F2937;
+  --muted: #64748B;
+  --muted-2: #94A3B8;
+  --line: #E2E8F0;
+  --bg: #F4F7FC;
+  --card: #FFFFFF;
+  --ok: #16A34A;
+  --danger: #DC2626;
+  --radius: 14px;
+  --sidebar-w: 264px;
+  --topbar-h: 60px;
+  --font: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; min-height: 100%; }
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink-2);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---- View → div.v : RN flexbox defaults ---- */
+.v {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-shrink: 0;
+  position: relative;
+  min-width: 0;
+  border: 0 solid #000;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- Text → span.t ---- */
+.t {
+  display: block;
+  border: 0 solid #000;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.t .t { display: inline; }
+
+/* ---- TouchableOpacity → button.btn ---- */
+.btn {
+  appearance: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease, filter .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:hover:not(:disabled) { filter: brightness(0.97); }
+.btn:active:not(:disabled) { opacity: 0.7; }
+.btn:disabled { cursor: not-allowed; }
+.btn:focus-visible, .input:focus-visible, .icon-btn:focus-visible, a:focus-visible {
+  outline: 3px solid rgba(30, 100, 211, .45);
+  outline-offset: 2px;
+}
+
+/* ---- Image → img.img ---- */
+.img { display: block; object-fit: cover; flex-shrink: 0; border: 0 solid #000; max-width: 100%; }
+
+/* ---- TextInput → input/textarea.input ---- */
+.input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0 solid #000;
+  outline: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  flex-shrink: 1;
+}
+textarea.input { resize: vertical; }
+.input::placeholder { color: var(--ph, #9CA3AF); opacity: 1; }
+.input[readonly] { cursor: default; }
+
+/* ---- ScrollView → div.scroll ---- */
+.scroll { overflow: visible; }
+.scroll > .scroll-content { flex-shrink: 0; }
+.scroll-h { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.scroll-h > .scroll-content { flex-direction: row; width: max-content; min-width: 100%; }
+.no-scroll { overflow: hidden !important; }
+
+/* Horizontal paging (swipe tabs): each page is exactly one viewport wide */
+.pager { scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
+.pager::-webkit-scrollbar { display: none; }
+.pager > .pager-track { width: 100%; min-width: 0; align-items: flex-start; }
+.pager > .pager-track > * { flex: 0 0 100% !important; width: 100% !important; max-width: 100%; scroll-snap-align: start; }
+
+/* ---- FlatList → ul.list ---- */
+.list { margin: 0; padding: 0; }
+.list-h { flex-direction: row; overflow-x: auto; }
+.list-cols { display: grid; }
+.list-item { list-style: none; }
+
+/* ---- Icons ---- */
+.icon { display: inline-block; vertical-align: middle; }
+.icon-btn { background: none; border: 0; padding: 4px; cursor: pointer; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn:hover { background: rgba(15, 23, 42, .06); }
+
+/* ---- ActivityIndicator ---- */
+.spinner {
+  display: inline-block;
+  border-radius: 50%;
+  border-width: 3px;
+  border-style: solid;
+  animation: spin .8s linear infinite;
+  align-self: center;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Switch ---- */
+.switch { position: relative; display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch-track { width: 46px; height: 26px; border-radius: 999px; position: relative; transition: background .2s; }
+.switch-thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .2s; }
+.switch.on .switch-thumb { transform: translateX(20px); }
+.switch input:focus-visible + .switch-track { outline: 3px solid rgba(30,100,211,.45); outline-offset: 2px; }
+.switch.disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Modal → Dialog ---- */
+.modal-root { position: fixed; inset: 0; z-index: 1000; overflow: auto; }
+.modal-opaque { background: #fff; }
+.modal-root > .v { min-height: 100%; }
+.anim-slide > * { animation: slideUp .25s ease; }
+.anim-fade > * { animation: fadeIn .2s ease; }
+@keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- Refresh (pull-to-refresh replacement) ---- */
+.refresh-bar { display: flex; justify-content: flex-end; padding: 8px 16px 0; }
+.refresh-btn {
+  display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--brand); background: var(--brand-soft); border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+.refresh-btn:disabled { opacity: .7; cursor: progress; }
+
+/* ---- WebView → iframe ---- */
+.webview { position: relative; }
+.webview iframe { border: 0; width: 100%; height: 100%; flex: 1; display: block; }
+.webview-loading { position: absolute; inset: 0; display: flex; }
+
+/* ---- Alert → dialog ---- */
+.dlg-backdrop {
+  position: fixed; inset: 0; z-index: 2000; background: rgba(15, 23, 42, .5);
+  display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn .15s ease;
+}
+.dlg {
+  background: #fff; border-radius: 16px; width: 100%; max-width: 420px; padding: 24px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .3); animation: slideUp .2s ease;
+}
+.dlg-title { margin: 0 0 8px; font-size: 18px; color: var(--ink); }
+.dlg-msg { margin: 0; color: var(--muted); line-height: 1.5; white-space: pre-wrap; }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+.dlg-btn {
+  font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 18px; cursor: pointer;
+  background: var(--brand); color: #fff;
+}
+.dlg-btn:hover { background: var(--brand-dark); }
+.dlg-btn.ghost { background: #F1F5F9; color: var(--ink-2); }
+.dlg-btn.danger { background: var(--danger); }
+.picker-input { width: 100%; font: inherit; font-size: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; }
+
+/* ---- Toasts ---- */
+.toast-stack { position: fixed; top: 16px; right: 16px; z-index: 3000; display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - 32px)); }
+.toast {
+  display: flex; align-items: stretch; background: #fff; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .18); animation: slideIn .25s ease;
+}
+@keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast-bar { width: 5px; background: var(--ok); flex-shrink: 0; }
+.toast-error .toast-bar { background: var(--danger); }
+.toast-info .toast-bar { background: var(--brand); }
+.toast-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.toast-body strong { color: var(--ink); font-size: 14px; }
+.toast-body span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.toast-x { border: 0; background: none; font-size: 20px; color: var(--muted-2); cursor: pointer; padding: 0 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -1,0 +1,36 @@
+/* ==========================================================================
+   Web-first screen adaptations. Mobile keeps the original single-column
+   design; tablets and desktops get multi-column grids.
+   ========================================================================== */
+
+/* Card collections (FlatList + .map() lists) → responsive grids */
+@media (min-width: 900px) {
+  .content ul.list:not(.list-h):not(.list-cols),
+  .content .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  .content ul.list > .list-item > *,
+  .content .card-grid > .grid-item { margin-left: 0 !important; margin-right: 0 !important; margin-top: 0 !important; margin-bottom: 0 !important; height: 100%; }
+  .content ul.list > .list-item { height: 100%; }
+  .content .card-grid > :not(.grid-item) { grid-column: 1 / -1; }
+}
+
+/* Very wide monitors: three comfortable columns */
+@media (min-width: 1600px) {
+  .content ul.list:not(.list-h):not(.list-cols),
+  .content .card-grid { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
+}
+
+/* Screens rendered in the auth card never need extra outer spacing */
+.auth-card ul.list { display: flex; }
+
+/* Map screen fills the viewport beside the sidebar */
+.content-full .webview { min-height: 60vh; }
+
+/* Readable max line length for long-form text blocks on desktop */
+@media (min-width: 1024px) {
+  .content .t { max-width: 100%; }
+}
