@@ -231,7 +231,7 @@ const WorkerDetailScreen = ({ navigation, route }) => {
 
                     <button className="v btn" type="button"
                         style={sx(styles.policeAlertButton)}
-                        onClick={press(() => navigation.navigate('workerPoliceRecord', { workerId: worker.id || workerId }))}
+                        onClick={press(() => navigation.navigate('CharacterCertificateScreen', { workerId: worker.id || workerId }))}
                     >
                         <Icon name="shield-alert" size={22} color="#B91C1C" />
                         <div className="v" style={sx(styles.badgeTextContainer)}>

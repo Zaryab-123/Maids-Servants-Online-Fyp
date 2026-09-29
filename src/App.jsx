@@ -31,6 +31,8 @@ import WorkerDirectoryScreen from './assets/components/Company/WorkerDirectorySc
 import WorkerDetailsVerificationScreen from './assets/components/Company/WorkerDetailsVerificationScreen';
 import WorkerCertificationDetail from './assets/components/Client/WorkerCertificationDetail';
 import PoliceVerificationPortal from './assets/components/Police/PoliceVerificationPortal';
+import CharacterCertificateScreen from './assets/components/Police/CharacterCertificateScreen';
+import IssueCharacterCertificateScreen from './assets/components/Police/IssueCharacterCertificateScreen';
 import FileCriminalRecordScreen from './assets/components/Police/FileCriminalRecordScreen';
 import Map from './assets/components/Map/Map';
 import ClientProfileScreen from './assets/components/Client/ClientProfileScreen';
@@ -68,6 +70,8 @@ export const SCREENS = [
   ['WorkerDetailsVerificationScreen', WorkerDetailsVerificationScreen],
   ['WorkerCertificationDetail', WorkerCertificationDetail],
   ['PoliceVerificationPortal', PoliceVerificationPortal],
+  ['CharacterCertificateScreen', CharacterCertificateScreen],
+  ['IssueCharacterCertificateScreen', IssueCharacterCertificateScreen],
   ['FileCriminalRecordScreen', FileCriminalRecordScreen],
   ['MapScreen', Map],
   ['ClientProfileScreen', ClientProfileScreen],
