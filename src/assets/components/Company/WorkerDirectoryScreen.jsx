@@ -39,7 +39,10 @@ const WorkerDirectoryScreen = ({ navigation }) => {
       if (savedName) setCompanyName(savedName);
 
       if (companyId) {
-        const response = await fetch(`${API_DIRECTORY}/GetCompanyProfile?companyId=${companyId}`);
+        const authToken = await AsyncStorage.getItem('userToken');
+        const response = await fetch(`${API_DIRECTORY}/GetCompanyProfile?companyId=${companyId}`, {
+          headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+        });
         const data = await response.json();
         if (response.ok && data.companyPicture) {
           setCompanyPicture(data.companyPicture);
@@ -57,7 +60,10 @@ const WorkerDirectoryScreen = ({ navigation }) => {
   const fetchWorkers = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_DIRECTORY}/GetAllWorkers`);
+      const authToken = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_DIRECTORY}/GetAllWorkers`, {
+        headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+      });
       const data = await response.json();
 
       if (response.ok) {

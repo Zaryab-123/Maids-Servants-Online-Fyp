@@ -39,7 +39,10 @@ const WorkerDetailsVerificationScreen = ({ route, navigation }) => {
     try {
       setIsLoading(true);
       // Compatible with both route params (/GetWorkerDetails/1) and query params (?workerId=1)
-      const response = await fetch(`${API_DIRECTORY}/GetWorkerDetails/${workerId}`);
+      const authToken = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${API_DIRECTORY}/GetWorkerDetails/${workerId}`, {
+        headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+      });
       const data = await response.json();
 
       if (response.ok) {
@@ -89,13 +92,17 @@ const WorkerDetailsVerificationScreen = ({ route, navigation }) => {
         trainingEvaluationNotes: trainingNotes.trim()
       };
 
+      const authToken = await AsyncStorage.getItem('userToken');
       const response = await fetch(`${API_DIRECTORY}/IssueCertificate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
         body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data = {};
+      try { data = rawText ? JSON.parse(rawText) : {}; } catch { data = { message: rawText.slice(0, 180) }; }
+      if (response.status === 401 || response.status === 403) data.message = data.message || 'Your company session has expired. Please log in again.';
 
       if (response.ok) {
         NotificationHelper.showSuccess(data.message || "Certificate issued successfully!");

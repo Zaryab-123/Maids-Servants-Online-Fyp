@@ -92,10 +92,10 @@ const IssueCharacterCertificateScreen = ({ route, navigation }) => {
 
       const result = await response.json();
       if (response.ok) {
-        NotificationHelper.showSuccess(
-          `${result.message} (valid until ${result.expiryDate})`,
-          () => navigation.goBack()
-        );
+        NotificationHelper.showSuccess(`${result.message} (valid until ${result.expiryDate})`);
+        // Return through the SPA router explicitly; browser-history back can
+        // leave the app when this screen was opened from a fresh/deep link.
+        navigation.replace('PoliceVerificationPortal');
       } else {
         const errorMsg = result.detail ? `${result.message} (${result.detail})` : (result.message || 'Failed to issue certificate.');
         NotificationHelper.showError(errorMsg);

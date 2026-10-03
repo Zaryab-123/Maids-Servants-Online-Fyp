@@ -17,8 +17,8 @@ const WorkerDashboardScreen = ({ navigation }) => {
     const [worker, setWorker] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Dynamic Tabs: 'Overview', 'Time Slots', 'Experience', 'Reviews'
-    const tabs = ['Overview', 'Time Slots', 'Experience', 'Reviews'];
+    // Profile sections. Skills appears before availability/time slots.
+    const tabs = ['Overview', 'Skills', 'Time Slots', 'Experience', 'Reviews'];
     const [activeTab, setActiveTab] = useState('Overview');
     const tabScrollViewRef = useRef(null);
 
@@ -429,6 +429,26 @@ const WorkerDashboardScreen = ({ navigation }) => {
             >
                 {/* 1. OVERVIEW TAB */}
                 <div className="v scroll" style={sx({ width: SCREEN_WIDTH })} ><div className="v scroll-content" style={sx(styles.tabContentPadding)}>
+                    {/* Course Management — intentionally first so it is immediately visible */}
+                    <div className="v" style={sx({ flexDirection: 'row', gap: 10, marginBottom: 14 })}>
+                        <button className="v btn" type="button"
+                            style={sx({ flex: 1, backgroundColor: '#1565C0', borderRadius: 16, padding: 15 })}
+                            onClick={press(() => navigation.navigate('WorkerCourseCatalogueScreen'))}
+                        >
+                            <Icon name="school-outline" size={26} color="#FFFFFF" />
+                            <span className="t" style={sx({ color: '#FFFFFF', fontWeight: '800', marginTop: 10 })}>Browse Courses</span>
+                            <span className="t" style={sx({ color: '#DCEBFF', fontSize: 11, marginTop: 3 })}>Enroll in company training</span>
+                        </button>
+                        <button className="v btn" type="button"
+                            style={sx({ flex: 1, backgroundColor: '#FFFFFF', borderColor: '#D9E5F3', borderWidth: 1, borderRadius: 16, padding: 15 })}
+                            onClick={press(() => navigation.navigate('WorkerMyCoursesScreen'))}
+                        >
+                            <Icon name="certificate-outline" size={26} color="#1565C0" />
+                            <span className="t" style={sx({ color: '#172033', fontWeight: '800', marginTop: 10 })}>My Learning</span>
+                            <span className="t" style={sx({ color: '#64748B', fontSize: 11, marginTop: 3 })}>Courses and certificates</span>
+                        </button>
+                    </div>
+
                     {/* Duty Status Card */}
                     <div className="v" style={sx(styles.card)}>
                         <div className="v" style={sx(styles.cardRow)}>
@@ -584,7 +604,96 @@ const WorkerDashboardScreen = ({ navigation }) => {
                     </button>
                 </div></div>
 
-                {/* 2. TIME SLOTS TAB */}
+                {/* 2. SKILLS TAB */}
+                <div className="v scroll"
+                    style={sx({ width: SCREEN_WIDTH })}
+                    
+                    
+                ><div className="v scroll-content" style={sx(styles.tabContentPadding)}>
+                    <div className="v" style={sx(styles.card)}>
+                        <div className="v" style={sx(styles.cardRow)}>
+                            <div className="v" style={sx([styles.iconCircleBg, { backgroundColor: '#EAF3FF' }])}>
+                                <Icon name="certificate-outline" size={21} color="#1565C0" />
+                            </div>
+                            <div className="v" style={sx({ flex: 1, marginLeft: 12 })}>
+                                <span className="t" style={sx(styles.cardTitle)}>Professional Skills</span>
+                                <span className="t" style={sx(styles.cardSubtext)}>Your primary and secondary service expertise</span>
+                            </div>
+                            <button className="v btn" type="button"
+                                style={sx(styles.lightBlueBtn)}
+                                onClick={press(() => navigation.navigate('Signup', { isEdit: true, initialData: worker }))}
+                            >
+                                <Icon name="pencil-outline" size={14} color="#1E64D3" />
+                                <span className="t" style={sx([styles.lightBlueBtnText, { marginLeft: 4 }])}>Edit</span>
+                            </button>
+                        </div>
+
+                        <div className="v" style={sx(styles.divider)} />
+
+                        <span className="t" style={sx({ color: '#172033', fontSize: 14, fontWeight: '800', marginBottom: 4 })}>
+                            Primary Service
+                        </span>
+                        <span className="t" style={sx({ color: '#64748B', fontSize: 12, marginBottom: 12 })}>
+                            Your main professional category
+                        </span>
+                        <div className="v" style={sx({ alignSelf: 'flex-start', backgroundColor: '#1565C0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 14 })}>
+                            <span className="t" style={sx({ color: '#FFFFFF', fontWeight: '800' })}>
+                                {worker.role || 'General Worker'}
+                            </span>
+                        </div>
+
+                        <span className="t" style={sx({ color: '#172033', fontSize: 14, fontWeight: '800', marginBottom: 9 })}>
+                            Primary Skills
+                        </span>
+                        {worker.primarySkills && worker.primarySkills.length > 0 ? (
+                            <div className="v" style={sx({ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 })}>
+                                {worker.primarySkills.map((skill, index) => (
+                                    <div className="v" key={`${skill}-${index}`} style={sx({ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF3FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 18, paddingHorizontal: 11, paddingVertical: 7 })}>
+                                        <Icon name="check-decagram" size={14} color="#1565C0" />
+                                        <span className="t" style={sx({ color: '#0D47A1', fontWeight: '700', fontSize: 12, marginLeft: 5 })}>{skill}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="t" style={sx([styles.emptyText, { textAlign: 'left', marginBottom: 18 }])}>No primary skills added.</span>
+                        )}
+
+                        <div className="v" style={sx(styles.divider)} />
+                        <span className="t" style={sx({ color: '#172033', fontSize: 14, fontWeight: '800', marginTop: 14, marginBottom: 4 })}>
+                            Secondary / Part-Time Services
+                        </span>
+                        <span className="t" style={sx({ color: '#64748B', fontSize: 12, marginBottom: 12 })}>
+                            Additional categories and services you can provide
+                        </span>
+
+                        {worker.partTimeSkills && worker.partTimeSkills.length > 0 ? (
+                            worker.partTimeSkills.map((group, groupIndex) => (
+                                <div className="v" key={`${group.categoryName}-${groupIndex}`} style={sx({ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 13, padding: 12, marginBottom: 10 })}>
+                                    <div className="v" style={sx({ flexDirection: 'row', alignItems: 'center', marginBottom: 9 })}>
+                                        <Icon name="briefcase-outline" size={17} color="#1565C0" />
+                                        <span className="t" style={sx({ color: '#172033', fontWeight: '800', marginLeft: 7 })}>
+                                            {group.categoryName || 'Additional Service'}
+                                        </span>
+                                    </div>
+                                    <div className="v" style={sx({ flexDirection: 'row', flexWrap: 'wrap', gap: 7 })}>
+                                        {(group.skills || []).map((skill, index) => (
+                                            <div className="v" key={`${skill}-${index}`} style={sx({ backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D9E5F3', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 })}>
+                                                <span className="t" style={sx({ color: '#475569', fontSize: 12, fontWeight: '600' })}>{skill}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="v" style={sx({ alignItems: 'center', paddingVertical: 24 })}>
+                                <Icon name="briefcase-off-outline" size={38} color="#CBD5E1" />
+                                <span className="t" style={sx([styles.emptyText, { marginTop: 8 }])}>No secondary services added.</span>
+                            </div>
+                        )}
+                    </div>
+                </div></div>
+
+                {/* 3. TIME SLOTS TAB */}
                 <div className="v scroll" style={sx({ width: SCREEN_WIDTH })} ><div className="v scroll-content" style={sx(styles.tabContentPadding)}>
                     <div className="v" style={sx(styles.card)}>
                         <div className="v" style={sx(styles.cardRow)}>
@@ -841,7 +950,7 @@ const styles = StyleSheet.create({
     underlineTabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E5EA', marginBottom: 4 },
     underlineTabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
     underlineTabBtnActive: { borderBottomColor: '#1E64D3' },
-    underlineTabText: { fontSize: 13, fontWeight: '600', color: '#8E8E93' },
+    underlineTabText: { fontSize: 11, fontWeight: '600', color: '#8E8E93' },
     underlineTabTextActive: { color: '#1E64D3', fontWeight: 'bold' },
 
     // Cards

@@ -720,6 +720,7 @@ import NotificationHelper from '../Notification/NotificationHelper';
 import { SERVER_BASE, API_ACCOUNT } from '../../config';
 import { Platform, RESIZE, Spinner, StyleSheet, TextBox, changeText, imgSrc, press, sx, tin } from '@/web';
 import __img_logo_png from '../../images/logo.png';
+import defaultUser from '../../images/default-user.png';
 
 
 // ─── Design tokens (prototype) ────────────────────────────────────────────────
@@ -734,6 +735,17 @@ const SOFT_BLUE = '#EAF2FF';
 const SOFT_BLUE_BORDER = '#D8E6FF';
 
 const LOGO_MARK = __img_logo_png;
+
+const resolveProfileImage = (rawValue) => {
+  if (!rawValue || typeof rawValue !== 'string') return null;
+  const value = rawValue.trim();
+  if (!value) return null;
+  if (value.includes('company_default') || value.includes('default-user') || value.includes('/Images/default') || value.includes('default.jpg')) {
+    return null;
+  }
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('blob:')) return value;
+  return value.startsWith('/') ? `${SERVER_BASE}${value}` : value;
+};
 
 // The signup POST is a multipart upload (profile photo + JSON). Nothing used to
 // bound it, so when the backend never answered the button stayed on the spinner
@@ -897,8 +909,11 @@ const SignupScreen = ({ navigation, route }) => {
         setLicenseNumber(data.licenseNumber || '');
       }
 
-      if (data.picture && typeof data.picture === 'string') {
-        setSelectedImage({ uri: data.picture.startsWith('/') ? `${SERVER_BASE}${data.picture}` : data.picture });
+      const resolvedPicture = resolveProfileImage(data.picture);
+      if (resolvedPicture) {
+        setSelectedImage({ uri: resolvedPicture });
+      } else {
+        setSelectedImage(null);
       }
     }
 
@@ -1008,11 +1023,13 @@ const SignupScreen = ({ navigation, route }) => {
       (response) => {
         if (!response.didCancel && response.assets) {
           const asset = response.assets[0];
+          const width = asset && typeof asset.width === 'number' ? asset.width : 'unknown';
+          const height = asset && typeof asset.height === 'number' ? asset.height : 'unknown';
           console.log('[signup] photo picked:', {
             sizeKB: asset && asset.fileSize ? Math.round(asset.fileSize / 1024) : 'unknown',
             type: asset && asset.type,
-            width: asset && asset.width,
-            height: asset && asset.height,
+            width,
+            height,
           });
           setSelectedImage(asset);
         }
@@ -1099,7 +1116,23 @@ const SignupScreen = ({ navigation, route }) => {
     const formData = new FormData();
 
     if (isEditMode) {
-      const initialId = route.params?.initialData?.id;
+      const initialData = route.params?.initialData || {};
+      const sessionId = await AsyncStorage.getItem(
+        dataRole === 'Company' ? 'companyId' : (dataRole === 'Client' ? 'clientId' : 'workerId')
+      );
+      const initialId =
+        initialData.id ??
+        initialData.companyID ??
+        initialData.companyId ??
+        initialData.workerId ??
+        initialData.clientId ??
+        initialData.userId ??
+        initialData.UserId ??
+        initialData.CompanyID ??
+        initialData.WorkerId ??
+        initialData.ClientId ??
+        sessionId;
+
       if (!initialId) {
         NotificationHelper.showError("Session error: Missing profile tracking metadata.");
         submittingRef.current = false;
@@ -1107,7 +1140,7 @@ const SignupScreen = ({ navigation, route }) => {
       }
       formData.append(
         dataRole === 'Company' ? 'CompanyID' : (dataRole === 'Client' ? 'ClientId' : 'WorkerId'),
-        initialId
+        String(initialId)
       );
     }
 

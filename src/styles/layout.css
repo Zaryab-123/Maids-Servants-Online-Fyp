@@ -56,7 +56,8 @@
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--topbar-h) minmax(calc(100vh - var(--topbar-h)), auto); }
   .topbar {
     display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40;
-    height: var(--topbar-h); padding: 0 12px; background: rgba(255, 255, 255, .92); backdrop-filter: blur(10px);
+    height: var(--topbar-h); padding: 0 12px; background: rgba(255, 255, 255, .92);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
   }
   .topbar-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--brand-deep); flex: 1; min-width: 0; }
@@ -96,7 +97,7 @@
 .auth-brand h1 { font-size: clamp(28px, 3vw, 40px); line-height: 1.15; margin: 28px 0 10px; letter-spacing: -.02em; }
 .auth-tag { font-size: 17px; opacity: .9; margin: 0 0 32px; line-height: 1.5; }
 .auth-points { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
-.auth-points li { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 500; background: rgba(255, 255, 255, .1); padding: 12px 16px; border-radius: 12px; backdrop-filter: blur(4px); }
+.auth-points li { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 500; background: rgba(255, 255, 255, .1); padding: 12px 16px; border-radius: 12px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
 
 .auth-main { display: flex; justify-content: center; align-items: flex-start; padding: 40px 24px; min-width: 0; }
 .auth-card { width: 100%; max-width: 760px; background: #fff; border-radius: 24px; box-shadow: 0 20px 60px rgba(15, 23, 42, .08); overflow: hidden; border: 1px solid var(--line); }

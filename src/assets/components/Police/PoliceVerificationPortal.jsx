@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
 import { useFocusEffect } from '@/web/navigation';
+import NotificationHelper from '../Notification/NotificationHelper';
 import { API_POLICE, SERVER_BASE } from '../../config';
 import { ListView, Spinner, StyleSheet, changeText, imgSrc, press, sx, tin } from '@/web';
 
@@ -12,20 +13,35 @@ const PoliceVerificationPortal = ({ navigation }) => {
   const [workers, setWorkers] = useState([]);
   const [counts, setCounts] = useState({ certified: 0, uncertified: 0 });
   const [isLoading, setIsLoading] = useState(false);
+  const authRedirectedRef = useRef(false);
   // Tab 1 = Uncertified (default), Tab 2 = Certified
   const [activeTab, setActiveTab] = useState('Uncertified');
 
-  const fetchWorkers = async (cnicQuery = '') => {
+  const fetchWorkers = useCallback(async (cnicQuery = '') => {
     setIsLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch(`${API_POLICE}/GetWorkersForVerification?searchCnic=${cnicQuery}`, {
+      if (!token) {
+        if (!authRedirectedRef.current) {
+          authRedirectedRef.current = true;
+          NotificationHelper.showError('Your police session has expired. Please log in again.');
+          navigation.replace('Login');
+        }
+        return;
+      }
+
+      const response = await fetch(`${API_POLICE}/GetWorkersForVerification?searchCnic=${encodeURIComponent(cnicQuery)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       // A 401/403 from the API has an empty body: don't crash on JSON parsing.
       const data = await response.json().catch(() => ({}));
       if (response.status === 401 || response.status === 403) {
-        console.warn('Police portal: session is not a valid police login (HTTP ' + response.status + '). Please log in again as a police officer.');
+        if (!authRedirectedRef.current) {
+          authRedirectedRef.current = true;
+          NotificationHelper.showError('Your police session is invalid or expired. Please log in again.');
+          navigation.replace('Login');
+        }
+        return;
       }
       if (response.ok) {
         setWorkers(data.workers || []);
@@ -39,19 +55,18 @@ const PoliceVerificationPortal = ({ navigation }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [navigation]);
 
   // Refresh on focus so a freshly-issued certificate moves the worker to the
   // Certified tab the moment the officer comes back.
   useFocusEffect(
     useCallback(() => {
       fetchWorkers(searchCnic);
-    }, [searchCnic])
+    }, [fetchWorkers, searchCnic])
   );
 
   const handleSearch = (text) => {
     setSearchCnic(text);
-    fetchWorkers(text);
   };
 
   const visibleWorkers = workers.filter((w) =>
