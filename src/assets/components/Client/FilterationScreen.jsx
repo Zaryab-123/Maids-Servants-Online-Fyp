@@ -17,6 +17,7 @@ const RECOMMENDED_CITIES = [
 const FilterationScreen = ({ navigation, route }) => {
     // States for dynamic data
     const [allCategories, setAllCategories] = useState([]);
+    const [workerAddresses, setWorkerAddresses] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
     // States for various filters
@@ -37,8 +38,31 @@ const FilterationScreen = ({ navigation, route }) => {
     // Initial load of categories
     useEffect(() => {
         fetchFilterData();
+        fetchWorkerAddresses();
         fetchHabits();
     }, []);
+
+    const fetchWorkerAddresses = async () => {
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            const response = await fetch(`${API_BASE}/GetWorkerAddresses`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const addresses = await response.json();
+                setWorkerAddresses(Array.isArray(addresses) ? addresses : []);
+            }
+        } catch (error) {
+            console.error('Worker addresses load failed:', error?.message);
+        }
+    };
+
+    const cityOptions = [...new Map(
+        [...RECOMMENDED_CITIES, ...workerAddresses, selectedCity]
+            .map(city => (city || '').trim())
+            .filter(Boolean)
+            .map(city => [city.toLocaleLowerCase(), city])
+    ).values()];
 
     const fetchHabits = async () => {
         try {
@@ -216,13 +240,13 @@ const FilterationScreen = ({ navigation, route }) => {
                 <div className="v" style={sx(styles.modalOverlay)}>
                     <div className="v" style={sx(styles.modalContent)}>
                         <div className="v" style={sx(styles.modalHeader)}>
-                            <span className="t" style={sx(styles.modalTitle)}>Select Recommended City</span>
+                            <span className="t" style={sx(styles.modalTitle)}>Select City or Worker Address</span>
                             <button className="v btn" type="button" onClick={press(() => setCityModalVisible(false))}>
                                 <Icon name="close" size={24} color="#333" />
                             </button>
                         </div>
                         <ListView
-                            data={RECOMMENDED_CITIES}
+                            data={cityOptions}
                             keyExtractor={(item) => item}
                             renderItem={({ item }) => (
                                 <button className="v btn" type="button" 
@@ -326,7 +350,7 @@ const FilterationScreen = ({ navigation, route }) => {
                         onClick={press(() => setCityModalVisible(true))}
                     >
                         <span className="t" style={sx([styles.dropdownText, !selectedCity && { color: '#999' }])}>
-                            {selectedCity || 'Select Recommended City'}
+                            {selectedCity || 'Select City or Worker Address'}
                         </span>
                         <Icon name="chevron-down" size={24} color="#000" />
                     </button>

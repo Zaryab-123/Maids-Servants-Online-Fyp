@@ -110,14 +110,12 @@ export default function CompanyCourseDashboardScreen({ navigation }) {
         <span className="t" style={sx(styles.countText)}>
           {item.enrollmentCount} enrolled · {item.completedCount} completed
         </span>
-        {!item.isDeleted && (
-          <button className="v btn" type="button" aria-label="Delete course"
-            style={sx(styles.deleteButton)}
-            onClick={press(() => removeCourse(item))}
-          >
-            <Icon name="trash-can-outline" size={19} color={C.danger} />
-          </button>
-        )}
+        <button className="v btn" type="button" aria-label="Delete course"
+          style={sx(styles.deleteButton)}
+          onClick={press(() => removeCourse(item))}
+        >
+          <Icon name="trash-can-outline" size={19} color={C.danger} />
+        </button>
       </div>
     </div>
   );
@@ -145,12 +143,6 @@ export default function CompanyCourseDashboardScreen({ navigation }) {
         </div>
 
         <div className="v" style={sx(styles.headerActions)}>
-          <button className="v btn" type="button"
-            style={sx(styles.addButton)}
-            onClick={press(() => navigation.navigate('CompanyCourseFormScreen'))}
-          >
-            <Icon name="plus" size={21} color={C.primary} />
-          </button>
           <button className="v btn" type="button"
             style={sx(styles.headerAvatarButton)}
             onClick={press(() => navigation.navigate('CompanyDashboardScreen'))}

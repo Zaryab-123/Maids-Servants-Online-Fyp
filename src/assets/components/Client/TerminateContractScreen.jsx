@@ -4,6 +4,7 @@ import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
 import { SERVER_BASE, API_DASHBOARD } from '../../config';
 import NotificationHelper from '../Notification/NotificationHelper';
+import CriteriaReviewSection from '../helpers/CriteriaReviewSection';
 import { Alert, Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 
 
@@ -12,11 +13,19 @@ const TerminateContractScreen = ({ navigation, route }) => {
 
     const [reason, setReason] = useState('');
     const [remarks, setRemarks] = useState('');
-    const [rating, setRating] = useState(0);
+    // Per-criterion scores: { [criteriaId]: score(1-5) } — the overall rating is
+    // computed on the server from these, so there is no single star input any more.
+    const [scores, setScores] = useState({});
+    const [requiredTotal, setRequiredTotal] = useState(null); // null = loading, -1 = failed, 0 = none configured
     const [isConfirmed, setIsConfirmed] = useState(false);
     const [worker, setWorker] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleScoreChange = (criteriaId, score) =>
+        setScores((prev) => ({ ...prev, [criteriaId]: score }));
+
+    const ratedCount = Object.values(scores).filter((v) => v > 0).length;
 
     useEffect(() => {
         fetchWorkerDetails();
@@ -48,8 +57,20 @@ const TerminateContractScreen = ({ navigation, route }) => {
             NotificationHelper.showError("Please enter a termination reason");
             return;
         }
-        if (rating === 0) {
-            NotificationHelper.showError("Please provide a rating for the worker");
+        if (requiredTotal === null) {
+            NotificationHelper.showError("Review criteria are still loading. Please wait a moment.");
+            return;
+        }
+        if (requiredTotal < 0) {
+            NotificationHelper.showError("Could not load the review criteria. Check your connection and reopen this screen.");
+            return;
+        }
+        if (requiredTotal === 0) {
+            NotificationHelper.showError("No review criteria are set up on the server yet. Please contact the administrator.");
+            return;
+        }
+        if (ratedCount < requiredTotal) {
+            NotificationHelper.showError(`Please rate every criterion (${ratedCount}/${requiredTotal} rated).`);
             return;
         }
         if (!isConfirmed) {
@@ -64,7 +85,10 @@ const TerminateContractScreen = ({ navigation, route }) => {
                 InterviewId: interviewId,
                 Reason: reason,
                 Remarks: remarks,
-                Rating: rating
+                CriteriaScores: Object.entries(scores).map(([criteriaId, score]) => ({
+                    CriteriaId: Number(criteriaId),
+                    Score: score
+                }))
             };
 
             const response = await fetch(`${SERVER_BASE}/api/Dashboard/TerminateContract`, {
@@ -143,18 +167,12 @@ const TerminateContractScreen = ({ navigation, route }) => {
                 </div>
 
                 <div className="v" style={sx(styles.remarksCard)}>
-                    <span className="t" style={sx([styles.label, { marginBottom: 15 }])}>Rate their service</span>
-                    <div className="v" style={sx(styles.starRow)}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                            <button className="v btn" type="button" key={star} onClick={press(() => setRating(star))}>
-                                <Icon
-                                    name={star <= rating ? "star" : "star-outline"}
-                                    size={36}
-                                    color={star <= rating ? "#FFD700" : "#CCC"}
-                                />
-                            </button>
-                        ))}
-                    </div>
+                    <CriteriaReviewSection
+                        interviewId={interviewId}
+                        scores={scores}
+                        onScoreChange={handleScoreChange}
+                        onLoaded={setRequiredTotal}
+                    />
                     <textarea className="input"
                         style={{ ...sx([styles.inputField, { height: 80, marginTop: 15 }]), '--ph': "#999" }}
                         placeholder="Add additional remarks/feedback"
@@ -298,4 +316,4 @@ const styles = StyleSheet.create({
     cancelText: { fontSize: 16, fontWeight: '600', color: '#666' }
 });
 
-export default TerminateContractScreen;
+export default TerminateContractScreen;

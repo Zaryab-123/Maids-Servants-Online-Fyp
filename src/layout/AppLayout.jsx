@@ -26,13 +26,25 @@ const NAV = {
     { to: 'WorkerDashboardScreen', label: 'Dashboard', icon: 'view-dashboard-outline' },
     { to: 'ActiveRequestsScreen', label: 'Interview Requests', icon: 'clipboard-text-clock-outline' },
     { to: 'JobConfirmationScreen', label: 'Job Offers', icon: 'briefcase-check-outline' },
+    { to: 'WorkerCourseCatalogueScreen', label: 'Browse Courses', icon: 'school-outline' },
+    { to: 'WorkerMyCoursesScreen', label: 'My Learning', icon: 'certificate-outline' },
     { to: 'MyHabitsScreen', label: 'My Habits', icon: 'star-outline' },
     { to: 'LeaveJobScreen', label: 'Leave Job', icon: 'exit-run' },
     { to: 'WorkerTerminationScreen', label: 'Contract Notices', icon: 'file-document-outline' },
   ],
-  Company: [{ to: 'WorkerDirectoryScreen', label: 'Worker Directory', icon: 'account-group-outline' }],
+  Company: [
+    { to: 'CompanyCourseDashboardScreen', label: 'Course Management', icon: 'school-outline' },
+    { to: 'CompanyDashboardScreen', label: 'Company Dashboard', icon: 'view-dashboard-outline' },
+    { to: 'WorkerDirectoryScreen', label: 'Worker Directory', icon: 'account-group-outline' },
+  ],
   Police: [{ to: 'PoliceVerificationPortal', label: 'Verification Portal', icon: 'shield-account-outline' }],
 };
+// Course Management screen gets its own shortcut menu (Worker Directory is replaced).
+const COURSE_DASHBOARD_NAV = [
+  { to: 'CompanyCourseDashboardScreen', label: 'Course Management', icon: 'school-outline' },
+  { to: 'CompanyDashboardScreen', label: 'Company Dashboard', icon: 'view-dashboard-outline' },
+  { to: 'CompanyCourseFormScreen', label: 'Add Course', icon: 'plus-circle-outline' },
+];
 const ROLE_LABEL = { Client: 'Client', Worker: 'Worker', Company: 'Company', Police: 'Police Officer' };
 const AUTH_SCREENS = ['/Login', '/Signup', '/AddSkills'];
 
@@ -92,7 +104,8 @@ export default function AppLayout() {
     );
   }
 
-  const items = NAV[session.role] || [];
+  const onCourseDashboard = session.role === 'Company' && location.pathname === '/CompanyCourseDashboardScreen';
+  const items = onCourseDashboard ? COURSE_DASHBOARD_NAV : NAV[session.role] || [];
   const logout = () => { window.localStorage.clear(); navigate('/Login', { replace: true }); };
 
   return (

@@ -80,17 +80,6 @@ export default function CompanyCourseDetailScreen({ navigation, route }) {
           {item.status}
         </span>
       </div>
-      {item.certificateId ? (
-        <button
-          className="v btn"
-          type="button"
-          aria-label="View certificate"
-          style={sx([s.done, { marginLeft: 8 }])}
-          onClick={press(() => navigation.navigate('CourseCertificateScreen', { certificateId: item.certificateId }))}
-        >
-          <Icon name="certificate-outline" size={18} color={C.white} />
-        </button>
-      ) : null}
       {item.status === 'Enrolled' && (
         <button
           className="v btn"
@@ -112,7 +101,6 @@ export default function CompanyCourseDetailScreen({ navigation, route }) {
         <span className="t" style={sx(s.heading)}>
           Course Details
         </span>
-        {!data.isDeleted ? (
           <button
             className="v btn"
             type="button"
@@ -121,7 +109,6 @@ export default function CompanyCourseDetailScreen({ navigation, route }) {
           >
             <Icon name="pencil-outline" size={23} color={C.white} />
           </button>
-        ) : <span style={{ width: 23 }} />}
       </div>
       <ListView
         data={data.enrollments}

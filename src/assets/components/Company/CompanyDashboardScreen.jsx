@@ -39,17 +39,12 @@ export default function CompanyDashboardScreen({ navigation }) {
     load();
   }, [load]));
 
-  const editProfile = async () => {
+  const editProfile = () => {
     if (!profile) return;
-    const savedCompanyId = await AsyncStorage.getItem('companyId');
     navigation.navigate('Signup', {
       isEdit: true,
       role: 'Company',
-      initialData: {
-        ...profile,
-        id: profile.companyId ?? profile.id ?? savedCompanyId,
-        companyId: profile.companyId ?? profile.id ?? savedCompanyId,
-      },
+      initialData: profile,
     });
   };
 

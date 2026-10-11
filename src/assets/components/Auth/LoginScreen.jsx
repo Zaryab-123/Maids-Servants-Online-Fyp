@@ -49,9 +49,10 @@ const LoginScreen = ({ navigation }) => {
 
   const handleLogin = async () => {
     const trimmedIdentifier = emailOrCnic.trim();
-    const trimmedPassword = password.trim();
+    // Passwords are sent exactly as typed (spaces can be part of a password).
+    const trimmedPassword = password;
 
-    if (!trimmedIdentifier || !trimmedPassword) {
+    if (!trimmedIdentifier || !trimmedPassword.trim()) {
       NotificationHelper.showError("Please enter your credentials.");
       return;
     }
@@ -73,10 +74,13 @@ const LoginScreen = ({ navigation }) => {
         })
       });
 
-      const result = await response.json();
+      // Read as text first so a non-JSON error body (e.g. a 5xx page) does not break parsing.
+      const rawText = await response.text();
+      let result = {};
+      try { result = rawText ? JSON.parse(rawText) : {}; } catch { result = { message: rawText.slice(0, 180) }; }
 
       if (response.ok) {
-        console.log('✅ Login API Response (OK):', { role: result.role, token: result.token?.substring(0, 20) + '...', clientId: result.clientId });
+        console.log('✅ Login API Response (OK):', { role: result.role, clientId: result.clientId });
         
         // 1. Prepare key-value pairs for atomic batch storage
         const storageItems = [
@@ -96,6 +100,8 @@ const LoginScreen = ({ navigation }) => {
         if (result.policeId != null) storageItems.push(['policeId', result.policeId.toString()]);
 
         // Save everything to AsyncStorage
+        // Clear the previous session first so IDs from another account never linger.
+        await AsyncStorage.clear();
         await AsyncStorage.multiSet(storageItems);
         console.log('✅ AsyncStorage: Saved token, role, clientId, and user info');
 
@@ -111,7 +117,8 @@ const LoginScreen = ({ navigation }) => {
           console.log('🔄 Navigating to WorkerDashboardScreen');
           navigation.replace('WorkerDashboardScreen');
         } else if (userRole === 'Company') {
-          navigation.replace('WorkerDirectoryScreen');
+          console.log('🔄 Navigating to CompanyCourseDashboardScreen');
+          navigation.replace('CompanyCourseDashboardScreen');
         } else if (userRole === 'Police') {
           navigation.replace('PoliceVerificationPortal');
         } else {

@@ -7,6 +7,7 @@ import AsyncStorage from '@/web/AsyncStorage';
 import DateTimePicker from '@/web/DateTimePicker';
 import NotificationHelper from '../Notification/NotificationHelper';
 import { SERVER_BASE, API_DASHBOARD } from '../../config';
+import ReviewCard from '../helpers/ReviewCard';
 import { Alert, Dialog, Dimensions, ScrollView, Spinner, StyleSheet, Toggle, imgSrc, press, sx } from '@/web';
 
 
@@ -777,42 +778,18 @@ const WorkerDashboardScreen = ({ navigation }) => {
                         {loadingReviews ? (
                             <Spinner size="small" color="#1E64D3" style={{ marginVertical: 20 }} />
                         ) : reviewsList && reviewsList.length > 0 ? (
-                            reviewsList.map((item, index) => {
-                                const reviewerName = item.reviewerName || item.name || item.clientName || 'Customer';
-                                const starsGiven = Math.round(Number(item.rating) || 0);
-                                return (
-                                    <div className="v grid-item" key={item.id || index} style={sx(styles.inlineReviewCard)}>
-                                        <div className="v" style={sx(styles.reviewHeaderRow)}>
-                                            <div className="v" style={sx(styles.reviewUserRow)}>
-                                                <div className="v" style={sx(styles.reviewAvatarPlaceholder)}>
-                                                    <span className="t" style={sx(styles.reviewAvatarText)}>
-                                                        {reviewerName.charAt(0).toUpperCase()}
-                                                    </span>
-                                                </div>
-                                                <div className="v">
-                                                    <span className="t" style={sx(styles.clientNameText)}>{reviewerName}</span>
-                                                    <span className="t" style={sx(styles.reviewDateText)}>
-                                                        {item.workedPeriod ? `Worked: ${item.workedPeriod}` : (item.date || 'Recent')}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="v" style={sx(styles.starsRow)}>
-                                                {[1, 2, 3, 4, 5].map((star) => (
-                                                    <Icon
-                                                        key={star}
-                                                        name={star <= starsGiven ? "star" : "star-outline"}
-                                                        size={16}
-                                                        color={star <= starsGiven ? "#FFD700" : "#E0E0E0"}
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <span className="t" style={sx(styles.reviewCommentText)}>
-                                            {item.comment || item.reviewText || "No detailed comment provided."}
-                                        </span>
-                                    </div>
-                                );
-                            })
+                            reviewsList.map((item, index) => (
+                                <ReviewCard
+                                    key={item.id || index}
+                                    name={item.reviewerName || item.name || item.clientName || 'Customer'}
+                                    rating={Number(item.rating) || 0}
+                                    date={item.date || 'Recent'}
+                                    workedPeriod={item.workedPeriod}
+                                    endType={item.endType}
+                                    criteria={item.criteria}
+                                    text={item.comment || item.reviewText || ''}
+                                />
+                            ))
                         ) : (
                             <div className="v" style={sx(styles.emptyReviewsContainer)}>
                                 <Icon name={reviewsError ? "wifi-off" : "message-draw"} size={40} color="#D1D1D6" />

@@ -6,6 +6,10 @@ import { SERVER_BASE, API_DASHBOARD } from '../../config';
 import NotificationHelper from '../Notification/NotificationHelper';
 
 import DateTimePicker from '@/web/DateTimePicker';
+import { confirmAction } from '../helpers/courseApi';
+
+// Local calendar date as YYYY-MM-DD (toISOString() would shift it back a day in UTC+5).
+const toLocalYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 import { Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 
 
@@ -75,7 +79,7 @@ const LeaveJobScreen = ({ navigation }) => {
             const payload = {
                 InterviewId: jobData.interviewId,
                 ResignationReason: reason,
-                LastWorkingDate: lastWorkingDay.toISOString().split('T', 1)[0]
+                LastWorkingDate: toLocalYMD(lastWorkingDay)
             };
 
             console.log("Submitting Resignation:", payload);
@@ -90,8 +94,9 @@ const LeaveJobScreen = ({ navigation }) => {
             });
 
             if (response.ok) {
+                let reviewSaved = true;
                 try {
-                    await fetch(`${API_DASHBOARD}/SubmitWorkerReviewToClient`, {
+                    const reviewRes = await fetch(`${API_DASHBOARD}/SubmitWorkerReviewToClient`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -103,11 +108,17 @@ const LeaveJobScreen = ({ navigation }) => {
                             Comment: reviewComment
                         })
                     });
+                    if (!reviewRes.ok) reviewSaved = false;
                 } catch (e) {
+                    reviewSaved = false;
                     console.error("Review error", e);
                 }
 
-                NotificationHelper.showSuccess("Resignation submitted successfully.");
+                if (reviewSaved) {
+                    NotificationHelper.showSuccess("Resignation submitted successfully.");
+                } else {
+                    NotificationHelper.showError("Your resignation was submitted, but your rating could not be saved.");
+                }
                 navigation.navigate('WorkerDashboardScreen');
             } else {
                 let errorMsg = "Failed to submit resignation.";
@@ -227,7 +238,7 @@ const LeaveJobScreen = ({ navigation }) => {
                     />
                 </div>
 
-                <button className="v btn" type="button" style={sx(styles.submitBtn)} onClick={press(handleResign)}>
+                <button className="v btn" type="button" style={sx(styles.submitBtn)} onClick={press(() => confirmAction('Submit resignation?', 'Your resignation notice will be sent to the client. This cannot be undone.', 'Submit', handleResign))}>
                     <span className="t" style={sx(styles.submitBtnText)}>Submit Resignation Notice</span>
                 </button>
 

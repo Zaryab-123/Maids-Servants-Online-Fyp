@@ -4,6 +4,7 @@ import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
 import NotificationHelper from '../Notification/NotificationHelper';
 import { API_DASHBOARD, API_DIRECTORY, SERVER_BASE } from '../../config';
+import ReviewCard from '../helpers/ReviewCard';
 import { Dimensions, ScrollView, Spinner, StyleSheet, imgSrc, press, sx } from '@/web';
 
 
@@ -95,25 +96,6 @@ const WorkerDetailScreen = ({ navigation, route }) => {
 
     const callLockRef = useRef(false);
 
-    const terminationStatusNorm = (value) => (value ?? '').toString().trim().toLowerCase();
-    const isRehireBlocked = () => {
-        if (!worker) return false;
-
-        const activeStatus = terminationStatusNorm(worker.activeInterviewStatus);
-        const workerStatus = terminationStatusNorm(worker.status);
-        const availability = terminationStatusNorm(worker.availability);
-        const explicitBlocked = Boolean(worker.isRehireBlocked || worker.isTerminated);
-
-        return (
-            explicitBlocked ||
-            worker.hasActiveInterview ||
-            availability === 'not available' ||
-            availability === 'currently booked' ||
-            ['terminated', 'resigned', 'completed', 'closed', 'rejected'].includes(activeStatus) ||
-            ['terminated', 'resigned', 'completed', 'closed', 'rejected'].includes(workerStatus)
-        );
-    };
-
     // Opens the interview booking screen. The lock makes a double tap harmless and the
     // guard means a tap that arrives before the worker payload exists cannot push a
     // screen without a workerId (which used to land the client back on the dashboard).
@@ -123,11 +105,6 @@ const WorkerDetailScreen = ({ navigation, route }) => {
         const id = worker?.id || route.params?.workerId;
         if (!id) {
             NotificationHelper.showError('Worker details are still loading. Please try again.');
-            return;
-        }
-
-        if (isRehireBlocked()) {
-            NotificationHelper.showError('This worker was terminated by you and cannot be re-hired.');
             return;
         }
 
@@ -302,7 +279,7 @@ const WorkerDetailScreen = ({ navigation, route }) => {
 
                     <button className="v btn" type="button"
                         style={sx(styles.policeAlertButton)}
-                        onClick={press(() => navigation.navigate('CharacterCertificateScreen', { workerId: worker.id || workerId }))}
+                        onClick={press(() => navigation.navigate('CharacterCertificateScreen', { workerId: worker.id || workerId, viewerRole: 'Client' }))}
                     >
                         <Icon name="shield-alert" size={22} color="#B91C1C" />
                         <div className="v" style={sx(styles.badgeTextContainer)}>
@@ -404,6 +381,8 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                                 text={rev.comment}
                                 date={rev.date}
                                 workedPeriod={rev.workedPeriod}
+                                endType={rev.endType}
+                                criteria={rev.criteria}
                                 onNamePress={() => {
                                     if (rev.clientId) {
                                         navigation.navigate('ClientProfileScreen', {
@@ -483,27 +462,19 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                 <button className="v btn" type="button"
                     style={sx([
                         styles.callBtn,
-                        (isRehireBlocked() || worker.hasActiveInterview || worker.availability === "NOT AVAILABLE") && styles.disabledBtn
+                        (worker.hasActiveInterview || worker.availability === "NOT AVAILABLE") && styles.disabledBtn
                     ])}
-                    disabled={isRehireBlocked() || worker.hasActiveInterview || worker.availability === "NOT AVAILABLE"}
-                    onClick={press(() => {
-                        if (isRehireBlocked()) {
-                            NotificationHelper.showError('This worker was terminated by you and cannot be re-hired.');
-                            return;
-                        }
-                        handleCallForInterview();
-                    })}
+                    disabled={worker.hasActiveInterview || worker.availability === "NOT AVAILABLE"}
+                    onClick={press(handleCallForInterview)}
                 >
                     <span className="t" style={sx(styles.callBtnText)}>
-                        {isRehireBlocked()
-                            ? 'Worker Not Available'
-                            : ['finalized', 'hired', 'accepted'].includes((worker.activeInterviewStatus || '').toString().toLowerCase())
-                                ? 'Worker Hired'
-                                : worker.availability === 'NOT AVAILABLE'
-                                    ? 'Worker Not Available'
-                                    : worker.hasActiveInterview
-                                        ? 'Interview Request Pending'
-                                        : 'Call For Interview'}
+                        {['finalized', 'hired', 'accepted'].includes((worker.activeInterviewStatus || '').toString().toLowerCase())
+                            ? 'Worker Hired'
+                            : worker.availability === 'NOT AVAILABLE'
+                                ? 'Worker Not Available'
+                                : worker.hasActiveInterview
+                                    ? 'Interview Request Pending'
+                                    : 'Call For Interview'}
                     </span>
                 </button>
             </div>
@@ -535,34 +506,6 @@ const ExperienceItem = ({ title, period, bullets, isActive }) => (
                 <span className="t" key={i} style={sx(styles.bulletText)}>{b}</span>
             ))}
         </div>
-    </div>
-);
-
-const ReviewCard = ({ name, rating, date, text, workedPeriod, onNamePress }) => (
-    <div className="v" style={sx(styles.reviewCard)}>
-        <div className="v" style={sx(styles.rowBetween)}>
-            <button className="v btn" type="button" onClick={press(onNamePress)}>
-                <span className="t" style={sx([styles.reviewName, { textDecorationLine: 'underline' }])}>{name}</span>
-            </button>
-            <div className="v" style={sx(styles.starsRow)}>
-                {[1, 2, 3, 4, 5].map(i => (
-                    <Icon
-                        key={i}
-                        name={i <= rating ? "star" : "star-outline"}
-                        size={14}
-                        color={i <= rating ? "#FFD700" : "#CCC"}
-                    />
-                ))}
-            </div>
-        </div>
-        <span className="t" style={sx(styles.reviewDuration)}>{date}</span>
-        {workedPeriod ? (
-            <div className="v" style={sx(styles.reviewWorkedRow)}>
-                <Icon name="briefcase-outline" size={11} color="#1E64D3" />
-                <span className="t" style={sx(styles.reviewWorkedText)}>Worked: {workedPeriod}</span>
-            </div>
-        ) : null}
-        <span className="t" style={sx(styles.reviewText)}>"{text}"</span>
     </div>
 );
 

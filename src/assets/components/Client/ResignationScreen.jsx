@@ -4,6 +4,8 @@ import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
 import { API_DASHBOARD, SERVER_BASE } from '../../config';
 import NotificationHelper from '../Notification/NotificationHelper';
+import CriteriaReviewSection from '../helpers/CriteriaReviewSection';
+import CriteriaBreakdown from '../helpers/CriteriaBreakdown';
 import { Alert, Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 import __img_logo_png from '../../images/logo.png';
 
@@ -12,7 +14,10 @@ const ResignationScreen = ({ route, navigation }) => {
     const { resignationId } = route.params || {};
     const [isLoading, setIsLoading] = useState(true);
     const [data, setData] = useState(null);
-    const [rating, setRating] = useState(3);
+    // Per-criterion scores: { [criteriaId]: score(1-5) }. The overall rating is
+    // derived on the server, so there is no single star input any more.
+    const [scores, setScores] = useState({});
+    const [requiredTotal, setRequiredTotal] = useState(null); // null = loading, -1 = failed, 0 = none configured
     const [remarks, setRemarks] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -21,9 +26,13 @@ const ResignationScreen = ({ route, navigation }) => {
     // worker's own review — written while resigning — locked this whole screen.)
     const isConfirmed = data?.isConfirmed === true;
 
-    // Before confirming the stars are the client's input; afterwards they show the
-    // rating that was actually stored.
-    const shownRating = isConfirmed ? (data?.clientReview?.rating ?? 0) : rating;
+    // Stars are read-only now; they only ever display the rating that was stored.
+    const shownRating = data?.clientReview?.rating ?? 0;
+
+    const handleScoreChange = (criteriaId, score) =>
+        setScores((prev) => ({ ...prev, [criteriaId]: score }));
+
+    const ratedCount = Object.values(scores).filter((v) => v > 0).length;
 
     useEffect(() => {
         if (!resignationId) {
@@ -60,6 +69,22 @@ const ResignationScreen = ({ route, navigation }) => {
             NotificationHelper.showError("Please enter some remarks before confirming.");
             return;
         }
+        if (requiredTotal === null) {
+            NotificationHelper.showError("Review criteria are still loading. Please wait a moment.");
+            return;
+        }
+        if (requiredTotal < 0) {
+            NotificationHelper.showError("Could not load the review criteria. Check your connection and reopen this screen.");
+            return;
+        }
+        if (requiredTotal === 0) {
+            NotificationHelper.showError("No review criteria are set up on the server yet. Please contact the administrator.");
+            return;
+        }
+        if (ratedCount < requiredTotal) {
+            NotificationHelper.showError(`Please rate every criterion (${ratedCount}/${requiredTotal} rated).`);
+            return;
+        }
 
         setIsSubmitting(true);
         try {
@@ -72,8 +97,11 @@ const ResignationScreen = ({ route, navigation }) => {
                 },
                 body: JSON.stringify({
                     InterviewId: data.interviewId,
-                    Rating: rating,
-                    Comment: remarks
+                    Comment: remarks,
+                    CriteriaScores: Object.entries(scores).map(([criteriaId, score]) => ({
+                        CriteriaId: Number(criteriaId),
+                        Score: score
+                    }))
                 })
             });
 
@@ -93,30 +121,18 @@ const ResignationScreen = ({ route, navigation }) => {
         }
     };
 
-    const renderStars = (size = 30) => (
+    // Read-only star display; pass the value to show (defaults to the stored
+    // client review). The tappable single-star input is gone — criteria input is
+    // handled by CriteriaReviewSection below.
+    const renderStars = (size = 30, value = shownRating) => (
         <div className="v" style={sx(styles.starRow)}>
             {[1, 2, 3, 4, 5].map((star) => (
-                isConfirmed ? (
-                    <Icon
-                        key={star}
-                        name={star <= shownRating ? 'star' : 'star-outline'}
-                        size={size}
-                        color={star <= shownRating ? '#FFC107' : '#D0D5DD'}
-                    />
-                ) : (
-                    <button className="v btn" type="button"
-                        key={star}
-                        onClick={press(() => setRating(star))}
-                        
-                        style={sx(styles.starTap)}
-                    >
-                        <Icon
-                            name={star <= shownRating ? 'star' : 'star-outline'}
-                            size={size}
-                            color={star <= shownRating ? '#FFC107' : '#D0D5DD'}
-                        />
-                    </button>
-                )
+                <Icon
+                    key={star}
+                    name={star <= value ? 'star' : 'star-outline'}
+                    size={size}
+                    color={star <= value ? '#FFC107' : '#D0D5DD'}
+                />
             ))}
         </div>
     );
@@ -227,7 +243,7 @@ const ResignationScreen = ({ route, navigation }) => {
                         </div>
 
                         <div className="v" style={sx(styles.reviewMetaRow)}>
-                            {renderStars(16)}
+                            {renderStars(16, Number(data.workerReview.rating || 0))}
                             <span className="t" style={sx(styles.reviewRatingText)}>
                                 {Number(data.workerReview.rating || 0).toFixed(1)}
                             </span>
@@ -239,6 +255,8 @@ const ResignationScreen = ({ route, navigation }) => {
                                 &quot;{data.workerReview.comment}&quot;
                             </span>
                         ) : null}
+
+                        <CriteriaBreakdown criteria={data.workerReview.criteria} />
 
                         {data.workerReview.workedPeriod ? (
                             <div className="v" style={sx(styles.workedRow)}>
@@ -279,6 +297,8 @@ const ResignationScreen = ({ route, navigation }) => {
                                 </span>
                             ) : null}
 
+                            <CriteriaBreakdown criteria={data.clientReview?.criteria} />
+
                             <div className="v" style={sx(styles.lockNote)}>
                                 <Icon name="lock-outline" size={13} color="#15803D" />
                                 <span className="t" style={sx(styles.lockNoteText)}>
@@ -291,10 +311,15 @@ const ResignationScreen = ({ route, navigation }) => {
                     ) : (
                         <div className="v">
                             <span className="t" style={sx(styles.reviewHint)}>
-                                Tap a star to rate {data.workerName}, then write your remarks.
+                                Rate each criterion for {data.workerName}, then write your remarks.
                             </span>
 
-                            <div className="v" style={sx(styles.reviewMetaRow)}>{renderStars(30)}</div>
+                            <CriteriaReviewSection
+                                interviewId={data.interviewId}
+                                scores={scores}
+                                onScoreChange={handleScoreChange}
+                                onLoaded={setRequiredTotal}
+                            />
 
                             <textarea className="input"
                                 style={{ ...sx(styles.remarksInput), '--ph': "#9CA3AF" }}
