@@ -5,6 +5,7 @@ import AsyncStorage from '@/web/AsyncStorage';
 import NotificationHelper from '../Notification/NotificationHelper';
 import { API_DASHBOARD, API_DIRECTORY, SERVER_BASE } from '../../config';
 import ReviewCard from '../helpers/ReviewCard';
+import SkillRatingsGroup from '../helpers/SkillRatingsGroup';
 import { Dimensions, ScrollView, Spinner, StyleSheet, imgSrc, press, sx } from '@/web';
 
 
@@ -17,9 +18,9 @@ const WorkerDetailScreen = ({ navigation, route }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState(0);
 
-    // Company training certificate (legacy company verification OR newest course
-    // certificate — whichever GetWorkerCertificateDetail resolves). null = none.
-    const [certification, setCertification] = useState(null);
+    // All company-issued and course-completion certificates for this worker.
+    const [certificates, setCertificates] = useState([]);
+    const [certificatesLoaded, setCertificatesLoaded] = useState(false);
 
     const horizontalScrollRef = useRef(null);
 
@@ -33,26 +34,29 @@ const WorkerDetailScreen = ({ navigation, route }) => {
         ...(worker?.habits && worker.habits.length > 0 ? ['Habits'] : []),
     ];
 
-    // Same endpoint WorkerCertificationDetail uses, so this card and that screen
-    // can never disagree. 404 simply means "no certificate" — not an error.
-    const fetchCertification = useCallback(async () => {
+    // Use the same all-certificates endpoint as the read-only client list so the
+    // trust card is available whenever any certificate record exists.
+    const fetchCertificates = useCallback(async () => {
         try {
             const token = await AsyncStorage.getItem('userToken');
-            const response = await fetch(`${API_DIRECTORY}/GetWorkerCertificateDetail/${workerId}`, {
+            const response = await fetch(`${API_DIRECTORY}/GetWorkerCertificates/${workerId}`, {
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {}
             });
 
             if (response.ok) {
                 const data = await response.json();
-                setCertification(data);
+                setCertificates(Array.isArray(data) ? data : []);
+                setCertificatesLoaded(true);
             } else {
-                setCertification(null);
+                setCertificates([]);
+                setCertificatesLoaded(false);
             }
         } catch (error) {
-            // Network hiccup: quietly treat as "not certified" rather than
+            // Network hiccup: quietly treat as no available data rather than
             // blocking the whole profile behind a toast.
-            console.warn('Certification fetch failed:', error);
-            setCertification(null);
+            console.warn('Certificates fetch failed:', error);
+            setCertificates([]);
+            setCertificatesLoaded(false);
         }
     }, [workerId]);
 
@@ -89,10 +93,10 @@ const WorkerDetailScreen = ({ navigation, route }) => {
     useEffect(() => {
         const unsubscribe = navigation.addListener('focus', () => {
             fetchWorkerDetails();
-            fetchCertification();
+            fetchCertificates();
         });
         return unsubscribe;
-    }, [navigation, fetchWorkerDetails, fetchCertification]);
+    }, [navigation, fetchWorkerDetails, fetchCertificates]);
 
     const callLockRef = useRef(false);
 
@@ -114,6 +118,11 @@ const WorkerDetailScreen = ({ navigation, route }) => {
         navigation.navigate('InterviewSelectionScreen', {
             workerId: id,
             workerName: worker?.name || 'this worker',
+            // The detail payload already has the server's radius verdict. Pass it
+            // so the booking screen renders the right layout on its first frame.
+            isPartTimeAvailable: typeof worker?.isPartTimeAvailable === 'boolean'
+                ? worker.isPartTimeAvailable
+                : undefined,
         });
     };
 
@@ -246,21 +255,19 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                 <div className="v scroll" style={sx({ width: SCREEN_WIDTH })}  ><div className="v scroll-content" style={sx(styles.scrollContent)}>
                     <span className="t" style={sx(styles.sectionTitle)}>Trust & Verification</span>
 
-                    {certification ? (
+                    {certificates.length > 0 ? (
                         <button className="v btn" type="button"
                             style={sx(styles.companyBadgeButton)}
                             onClick={press(() => navigation.navigate('WorkerCertificationDetail', {
                                 workerId: worker.id || workerId,
+                                workerName: worker.name,
                             }))}
                         >
                             <Icon name="certificate" size={22} color="#026597" />
                             <div className="v" style={sx(styles.badgeTextContainer)}>
                                 <span className="t" style={sx(styles.companyBadgeTitle)}>Verified Training</span>
                                 <span className="t" style={sx(styles.companyBadgeSubtitle, 1)} >
-                                    {certification.certificateTitle
-                                        ? `${certification.certificateTitle} · `
-                                        : ''}
-                                    Certified by {certification.companyName || 'Verified Company'}
+                                    View all {certificates.length} certificate {certificates.length === 1 ? 'record' : 'records'}
                                 </span>
                             </div>
                             <Icon name="chevron-right" size={20} color="#026597" />
@@ -269,9 +276,13 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                         <div className="v" style={sx(styles.noCertRow)}>
                             <Icon name="certificate-outline" size={22} color="#94A3B8" />
                             <div className="v" style={sx(styles.badgeTextContainer)}>
-                                <span className="t" style={sx(styles.noCertTitle)}>No Verified Training</span>
+                                <span className="t" style={sx(styles.noCertTitle)}>
+                                    {certificatesLoaded ? 'No Verified Training' : 'Training Certificates Unavailable'}
+                                </span>
                                 <span className="t" style={sx(styles.noCertSubtitle)}>
-                                    This worker has no company training certificate yet
+                                    {certificatesLoaded
+                                        ? 'No company-issued certification or course-completion certificate is on record'
+                                        : 'Certificate records could not be loaded right now'}
                                 </span>
                             </div>
                         </div>
@@ -284,7 +295,7 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                         <Icon name="shield-alert" size={22} color="#B91C1C" />
                         <div className="v" style={sx(styles.badgeTextContainer)}>
                             <span className="t" style={sx(styles.policeAlertTitle)}>Criminal Background Check</span>
-                            <span className="t" style={sx(styles.policeAlertSubtitle)}>Click to review FIR & verification status</span>
+                            <span className="t" style={sx(styles.policeAlertSubtitle)}>Click to review police verification status</span>
                         </div>
                         <Icon name="chevron-right" size={20} color="#B91C1C" />
                     </button>
@@ -293,31 +304,34 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                     <span className="t" style={sx(styles.aboutDescription)}>{worker.bio || "No description provided."}</span>
 
                     <span className="t" style={sx(styles.sectionTitle)}>Primary Skills</span>
-                    <div className="v" style={sx(styles.chipWrapper)}>
-                        {worker.primarySkills && worker.primarySkills.length > 0 ? (
-                            worker.primarySkills.map((skill, index) => (
-                                <div className="v" key={index} style={sx(styles.skillChip)}>
-                                    <span className="t" style={sx(styles.skillText)}>{skill.toUpperCase()}</span>
-                                </div>
-                            ))
-                        ) : (
-                            <span className="t" style={sx(styles.emptyText)}>No primary skills listed.</span>
-                        )}
-                    </div>
+                    {((worker.primarySkillRatings && worker.primarySkillRatings.length > 0) ||
+                        (worker.primarySkills && worker.primarySkills.length > 0)) ? (
+                        <SkillRatingsGroup
+                            categoryLabel="Primary category"
+                            categoryName={worker.primaryCategoryName || worker.role || 'General Worker'}
+                            averageRating={worker.primaryCategoryAverageRating}
+                            ratingCount={worker.primaryCategoryRatingCount}
+                            skills={worker.primarySkillRatings && worker.primarySkillRatings.length > 0
+                                ? worker.primarySkillRatings
+                                : (worker.primarySkills || [])}
+                        />
+                    ) : (
+                        <span className="t" style={sx(styles.emptyText)}>No primary skills listed.</span>
+                    )}
 
                     <span className="t" style={sx(styles.sectionTitle)}>Part-Time Services</span>
                     {worker.partTimeSkills && worker.partTimeSkills.length > 0 ? (
                         worker.partTimeSkills.map((item, index) => (
-                            <div className="v" key={index} style={sx({ marginBottom: 10 })}>
-                                <span className="t" style={sx(styles.subCategoryLabel)}>{item.categoryName.toUpperCase()}</span>
-                                <div className="v" style={sx(styles.chipWrapper)}>
-                                    {item.skills.map((skill, sIndex) => (
-                                        <div className="v" key={sIndex} style={sx(styles.skillChipSecondary)}>
-                                            <span className="t" style={sx(styles.skillTextSecondary)}>{skill.toUpperCase()}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                            <SkillRatingsGroup
+                                key={item.categoryId || item.categoryName || index}
+                                categoryLabel="Part-time category"
+                                categoryName={item.categoryName}
+                                averageRating={item.averageRating}
+                                ratingCount={item.ratingCount}
+                                skills={item.skillRatings && item.skillRatings.length > 0
+                                    ? item.skillRatings
+                                    : (item.skills || [])}
+                            />
                         ))
                     ) : (
                         <span className="t" style={sx(styles.emptyText)}>No part-time skills added.</span>
@@ -383,6 +397,7 @@ const WorkerDetailScreen = ({ navigation, route }) => {
                                 workedPeriod={rev.workedPeriod}
                                 endType={rev.endType}
                                 criteria={rev.criteria}
+                                skillRatings={rev.skillRatings}
                                 onNamePress={() => {
                                     if (rev.clientId) {
                                         navigation.navigate('ClientProfileScreen', {

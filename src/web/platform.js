@@ -37,3 +37,51 @@ export const PermissionsAndroid = {
 };
 
 export const Keyboard = { dismiss: () => document.activeElement?.blur?.(), addListener: () => ({ remove() {} }) };
+
+/**
+ * AppState (React Native) → document visibility on the web.
+ *
+ * RN apps use AppState to pause polling and refresh when the app returns to
+ * the foreground. The browser equivalent is the Page Visibility API, so this
+ * shim reports 'active' while the tab is visible and 'background' when it is
+ * hidden, and fires the same 'change' subscription shape.
+ */
+const visibilityState = () =>
+  (typeof document !== 'undefined' && document.visibilityState === 'hidden' ? 'background' : 'active');
+
+/** RN Linking → browser navigation. `openURL` opens a new tab.
+ *
+ * Used by WorkerCertificateRecordDetail to open the uploaded certificate file.
+ */
+export const Linking = {
+  openURL: async (url) => {
+    const target = String(url || '');
+    if (!target) return false;
+    window.open(target, '_blank', 'noopener,noreferrer');
+    return true;
+  },
+  canOpenURL: async (url) => /^https?:/i.test(String(url || '')),
+  getInitialURL: async () => null,
+  addEventListener: () => ({ remove() {} }),
+};
+
+export const AppState = {
+  get currentState() {
+    return visibilityState();
+  },
+  addEventListener: (type, handler) => {
+    if (type !== 'change' || typeof handler !== 'function') return { remove() {} };
+    if (typeof document === 'undefined') return { remove() {} };
+    const onChange = () => handler(visibilityState());
+    document.addEventListener('visibilitychange', onChange);
+    window.addEventListener('focus', onChange);
+    window.addEventListener('blur', onChange);
+    return {
+      remove() {
+        document.removeEventListener('visibilitychange', onChange);
+        window.removeEventListener('focus', onChange);
+        window.removeEventListener('blur', onChange);
+      },
+    };
+  },
+};

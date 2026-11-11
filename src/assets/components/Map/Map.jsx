@@ -16,6 +16,7 @@
 // import Geolocation from '@react-native-community/geolocation';
 // import { SERVER_BASE, API_DASHBOARD } from '../../config';
 // import NotificationHelper from '../Notification/NotificationHelper';
+import { reverseGeocodeCity } from '../helpers/reverseGeocodeCity';
 
 // const { width, height } = Dimensions.get('window');
 
@@ -403,7 +404,7 @@ import AsyncStorage from '@/web/AsyncStorage';
 import Geolocation from '@/web/Geolocation';
 import { SERVER_BASE, API_DASHBOARD } from '../../config';
 import NotificationHelper from '../Notification/NotificationHelper';
-import { Dimensions, Spinner, StyleSheet, press, sx } from '@/web';
+import { Dimensions, Spinner, StyleSheet, changeText, press, sx } from '@/web';
 
 
 const { width, height } = Dimensions.get('window');
@@ -413,6 +414,48 @@ const { width, height } = Dimensions.get('window');
 const FALLBACK_CENTER = { latitude: 33.6844, longitude: 73.0479 };
 
 // Build the full-page Leaflet HTML with OSM tiles
+// Photon (OSM) place-search result → the shape the UI renders.
+// RN reference (do not edit here): assets/components/Map/Map.js — copied verbatim
+// so the client and worker map flows search identically. This file is Map.jsx.
+const formatPhotonPlace = (feature, index) => {
+    const coordinates = feature?.geometry?.coordinates;
+    const longitude = Number(coordinates?.[0]);
+    const latitude = Number(coordinates?.[1]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+    const properties = feature?.properties || {};
+    const street = [properties.housenumber, properties.street].filter(Boolean).join(' ');
+    const candidates = [
+        properties.name,
+        street,
+        properties.district,
+        properties.city,
+        properties.state,
+        properties.country,
+    ];
+    const parts = [];
+    const seen = new Set();
+    candidates.forEach((value) => {
+        const label = typeof value === 'string' ? value.trim() : '';
+        const normalized = label.toLowerCase();
+        if (label && !seen.has(normalized)) {
+            parts.push(label);
+            seen.add(normalized);
+        }
+    });
+
+    const title = parts[0] || properties.type || 'Place';
+    const subtitle = parts.slice(1).join(', ');
+    return {
+        id: String(feature.id || `${latitude.toFixed(6)}-${longitude.toFixed(6)}-${index}`),
+        title,
+        subtitle,
+        label: [title, subtitle].filter(Boolean).join(', '),
+        latitude,
+        longitude,
+    };
+};
+
 const getLeafletHTML = (lat, lng, workers, role) => {
     const workersJson = JSON.stringify(workers || []);
     const markerTitle = role === 'Worker' ? 'Your Service Location' : 'Your Location';
@@ -461,6 +504,14 @@ const getLeafletHTML = (lat, lng, workers, role) => {
     function sendPosition(lat, lng) {
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'position', lat: lat, lng: lng }));
     }
+
+    // Called from the app after a place search result is selected.
+    window.moveUserPinTo = function(lat, lng) {
+      var point = L.latLng(lat, lng);
+      userMarker.setLatLng(point);
+      map.setView(point, 17, { animate: true });
+      sendPosition(lat, lng);
+    };
 
     userMarker.on('dragend', function(e) {
       var pos = e.target.getLatLng();
@@ -520,6 +571,19 @@ const MapScreen = ({ navigation, route }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingLocation, setIsLoadingLocation] = useState(!clientPosition);
     const [mapHtml, setMapHtml] = useState(null);
+    // City name for the current pin (React Native resolves this too).
+    const [cityLabel, setCityLabel] = useState('');
+    const lastGeocoded = useRef('');
+    // Worldwide place search (Photon), ported from the React Native map.
+    const [placeQuery, setPlaceQuery] = useState('');
+    const [placeResults, setPlaceResults] = useState([]);
+    const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+    const [placeSearchError, setPlaceSearchError] = useState('');
+    const placeSearchRequestRef = useRef(0);
+    const suppressNextSearchRef = useRef(null);
+    const mapReadyRef = useRef(false);
+    const pendingMapLocationRef = useRef(null);
+    const searchPositionRef = useRef(null);
 
     useEffect(() => {
         const initializeMap = async () => {
@@ -558,6 +622,100 @@ const MapScreen = ({ navigation, route }) => {
         initializeMap();
     }, []);
 
+    // Reverse-geocode the pin to a city name, like the React Native app. The
+    // effect is keyed on the coordinate, so dragging the pin fires one request
+    // per settled position rather than one per pixel.
+    useEffect(() => {
+        if (!clientPosition) { setCityLabel(''); return undefined; }
+        const lat = Number(clientPosition.latitude);
+        const lng = Number(clientPosition.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+        const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+        if (lastGeocoded.current === key) return undefined;
+        lastGeocoded.current = key;
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            reverseGeocodeCity(lat, lng).then(city => { if (!cancelled) setCityLabel(city || ''); });
+        }, 600);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [clientPosition]);
+
+    searchPositionRef.current = clientPosition;
+
+    // Photon provides OSM-based worldwide place search. Debounce and keep the
+    // result count low for fair use of its public demo endpoint.
+    useEffect(() => {
+        const query = placeQuery.trim();
+        const requestId = ++placeSearchRequestRef.current;
+
+        if (suppressNextSearchRef.current === query) {
+            suppressNextSearchRef.current = null;
+            setPlaceResults([]);
+            setPlaceSearchError('');
+            setIsSearchingPlaces(false);
+            return undefined;
+        }
+        suppressNextSearchRef.current = null;
+
+        if (query.length < 2) {
+            setPlaceResults([]);
+            setPlaceSearchError('');
+            setIsSearchingPlaces(false);
+            return undefined;
+        }
+
+        setPlaceResults([]);
+        setPlaceSearchError('');
+        const controller = new AbortController();
+        const timer = setTimeout(async () => {
+            setIsSearchingPlaces(true);
+            try {
+                const parameters = [
+                    `q=${encodeURIComponent(query)}`,
+                    'limit=5',
+                    'lang=en',
+                ];
+                const bias = searchPositionRef.current;
+                const biasLatitude = Number(bias?.latitude);
+                const biasLongitude = Number(bias?.longitude);
+                if (Number.isFinite(biasLatitude) && Number.isFinite(biasLongitude)) {
+                    parameters.push(`lat=${biasLatitude}`, `lon=${biasLongitude}`, 'zoom=12');
+                }
+
+                const response = await fetch(`https://photon.komoot.io/api/?${parameters.join('&')}`, {
+                    signal: controller.signal,
+                    headers: { Accept: 'application/json' },
+                });
+                if (!response.ok) throw new Error(`Place search returned ${response.status}`);
+
+                const payload = await response.json();
+                const places = (Array.isArray(payload.features) ? payload.features : [])
+                    .map(formatPhotonPlace)
+                    .filter(Boolean)
+                    .slice(0, 5);
+
+                if (requestId === placeSearchRequestRef.current) {
+                    setPlaceResults(places);
+                    setPlaceSearchError(places.length ? '' : 'No matching places found.');
+                }
+            } catch (error) {
+                if (error?.name !== 'AbortError' && requestId === placeSearchRequestRef.current) {
+                    setPlaceResults([]);
+                    setPlaceSearchError('Place search is unavailable right now. Please try again.');
+                }
+            } finally {
+                if (requestId === placeSearchRequestRef.current) {
+                    setIsSearchingPlaces(false);
+                }
+            }
+        }, 1000);
+
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
+    }, [placeQuery]);
+
     // Receive messages from the Leaflet WebView
     const handleWebViewMessage = (event) => {
         try {
@@ -568,6 +726,53 @@ const MapScreen = ({ navigation, route }) => {
         } catch (e) {
             console.warn('WebView message parse error:', e);
         }
+    };
+
+    const moveMapPinTo = (coords) => {
+        if (!mapReadyRef.current || !webViewRef.current) {
+            pendingMapLocationRef.current = coords;
+            return;
+        }
+
+        // Same call the React Native screen injects into its WebView.
+        webViewRef.current.injectJavaScript(
+            `window.moveUserPinTo(${coords.latitude}, ${coords.longitude}); true;`
+        );
+        pendingMapLocationRef.current = null;
+    };
+
+    const handleWebViewLoadEnd = () => {
+        mapReadyRef.current = true;
+        if (pendingMapLocationRef.current) {
+            moveMapPinTo(pendingMapLocationRef.current);
+        }
+    };
+
+    const dismissKeyboard = () => {
+        if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+        }
+    };
+
+    const clearPlaceSearch = () => {
+        suppressNextSearchRef.current = null;
+        setPlaceQuery('');
+        setPlaceResults([]);
+        setPlaceSearchError('');
+        dismissKeyboard();
+    };
+
+    const handleSelectPlace = (place) => {
+        const coords = { latitude: place.latitude, longitude: place.longitude };
+        placeSearchRequestRef.current += 1;
+        suppressNextSearchRef.current = place.label;
+        setPlaceQuery(place.label);
+        setPlaceResults([]);
+        setPlaceSearchError('');
+        setIsSearchingPlaces(false);
+        setClientPosition(coords);
+        dismissKeyboard();
+        moveMapPinTo(coords);
     };
 
     const currentCoords = () => {
@@ -739,6 +944,7 @@ const MapScreen = ({ navigation, route }) => {
                 source={{ html: mapHtml }}
                 originWhitelist={['*']}
                 onMessage={handleWebViewMessage}
+                onLoadEnd={handleWebViewLoadEnd}
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
                 mixedContentMode="always"
@@ -765,13 +971,65 @@ const MapScreen = ({ navigation, route }) => {
                 </div>
             </div>
 
+            {/* Worldwide place search shared by client and worker map flows */}
+            <div className="v" style={sx(styles.placeSearchOverlay)}>
+                <div className="v" style={sx(styles.placeSearchCard)}>
+                    <div className="v" style={sx(styles.placeSearchInputRow)}>
+                        <Icon name="magnify" size={21} color="#64748B" />
+                        <input className="input"
+                            value={placeQuery ?? ''}
+                            onChange={changeText(setPlaceQuery)}
+                            placeholder="Search a place or address"
+                            style={{ ...sx(styles.placeSearchInput), '--ph': "#94A3B8" }}
+                            autoComplete="off"
+                            spellCheck={false}
+                            aria-label="Search places worldwide"
+                        />
+                        {isSearchingPlaces ? (
+                            <Spinner size="small" color="#1E64D3" />
+                        ) : placeQuery ? (
+                            <button className="v btn" type="button" onClick={press(clearPlaceSearch)}
+                                style={sx(styles.clearSearchButton)} aria-label="Clear place search">
+                                <Icon name="close-circle" size={19} color="#94A3B8" />
+                            </button>
+                        ) : null}
+                    </div>
+
+                    {placeQuery.trim().length > 0 && placeQuery.trim().length < 2 ? (
+                        <span className="t" style={sx(styles.placeSearchHint)}>Type at least 2 characters to search.</span>
+                    ) : null}
+                    {placeSearchError ? (
+                        <span className="t" style={sx(styles.placeSearchMessage)}>{placeSearchError}</span>
+                    ) : null}
+
+                    {placeResults.length > 0 && (
+                        <div className="v" style={sx(styles.placeResults)}>
+                            {placeResults.map((place, index) => (
+                                <button className="v btn" type="button" key={place.id}
+                                    style={sx([styles.placeResultRow, index === 0 && styles.placeResultRowFirst])}
+                                    onClick={press(() => handleSelectPlace(place))}>
+                                    <Icon name="map-marker-outline" size={20} color="#64748B" />
+                                    <div className="v" style={sx(styles.placeResultText)}>
+                                        <span className="t" style={sx(styles.placeResultTitle)}>{place.title}</span>
+                                        {place.subtitle ? (
+                                            <span className="t" style={sx(styles.placeResultSubtitle)}>{place.subtitle}</span>
+                                        ) : null}
+                                    </div>
+                                </button>
+                            ))}
+                            <span className="t" style={sx(styles.placeAttribution)}>Search: Photon · Map data: OpenStreetMap contributors</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Save Location Button Area */}
             {clientPosition && (
                 <div className="v" style={sx(styles.saveBtnContainer)}>
                     <div className="v" style={sx(styles.coordsChip)}>
                         <Icon name="crosshairs-gps" size={13} color="#1E64D3" />
                         <span className="t" style={sx(styles.coordsText)}>
-                            {clientPosition.latitude.toFixed(5)}, {clientPosition.longitude.toFixed(5)}
+                            {cityLabel ? `${cityLabel} · ` : ''}{clientPosition.latitude.toFixed(5)}, {clientPosition.longitude.toFixed(5)}
                         </span>
                     </div>
                     <button className="v btn" type="button" style={sx(styles.saveLocationBtn)} onClick={press(saveLocation)} disabled={isSaving}>
@@ -832,6 +1090,65 @@ const styles = StyleSheet.create({
     headerTitleContainer: { flex: 1 },
     headerTitle: { fontSize: 16, fontWeight: 'bold', color: '#1A1C1E' },
     headerSubtitle: { fontSize: 12, color: '#666' },
+
+    // Place search (values copied from the React Native StyleSheet)
+    placeSearchOverlay: {
+        position: 'absolute',
+        top: 96,
+        left: 16,
+        right: 16,
+        zIndex: 20,
+        elevation: 20,
+    },
+    placeSearchCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 15,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
+        elevation: 8,
+    },
+    placeSearchInputRow: {
+        minHeight: 42,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 9,
+    },
+    placeSearchInput: {
+        flex: 1,
+        minWidth: 0,
+        color: '#1A1C1E',
+        fontSize: 14,
+        paddingVertical: 7,
+        borderWidth: 0,
+        backgroundColor: 'transparent',
+    },
+    clearSearchButton: { padding: 3 },
+    placeSearchHint: { color: '#64748B', fontSize: 11.5, paddingTop: 3, paddingBottom: 4 },
+    placeSearchMessage: { color: '#64748B', fontSize: 12, paddingTop: 4, paddingBottom: 3 },
+    placeResults: {
+        borderTopWidth: 1,
+        borderTopColor: '#EEF2F7',
+        marginTop: 5,
+        paddingTop: 2,
+    },
+    placeResultRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 9,
+        borderTopWidth: 1,
+        borderTopColor: '#F1F5F9',
+    },
+    placeResultRowFirst: { borderTopWidth: 0 },
+    placeResultText: { flex: 1, minWidth: 0, marginLeft: 9, alignItems: 'flex-start' },
+    placeResultTitle: { color: '#1E293B', fontSize: 13, fontWeight: '700' },
+    placeResultSubtitle: { color: '#64748B', fontSize: 11.5, marginTop: 2 },
+    placeAttribution: { color: '#94A3B8', fontSize: 9.5, paddingTop: 4, paddingBottom: 2 },
 
     // Save button area at bottom
     saveBtnContainer: {

@@ -43,6 +43,10 @@ import WorkerMyCoursesScreen from './assets/components/Worker/WorkerMyCoursesScr
 import CourseCertificateScreen from './assets/components/Worker/CourseCertificateScreen';
 import Map from './assets/components/Map/Map';
 import ClientProfileScreen from './assets/components/Client/ClientProfileScreen';
+import WorkerNotificationsScreen from './assets/components/Worker/WorkerNotificationsScreen';
+import WorkerResignationReviewScreen from './assets/components/Worker/WorkerResignationReviewScreen';
+import SelectInterviewSkills from './assets/components/Client/SelectInterviewSkills';
+import WorkerCertificateRecordDetail from './assets/components/Client/WorkerCertificateRecordDetail';
 
 /**
  * Same stack as the original App.tsx: identical screen names, same
@@ -59,7 +63,10 @@ export const SCREENS = [
   ['FilterationScreen', FilterationScreen],
   ['WorkerDetailScreen', WorkerDetailScreen],
   ['WorkerDashboardScreen', WorkerDashboardScreen],
+  ['WorkerNotificationsScreen', WorkerNotificationsScreen],
+  ['WorkerResignationReviewScreen', WorkerResignationReviewScreen],
   ['InterviewSelectionScreen', InterviewSelectionScreen],
+  ['SelectInterviewSkills', SelectInterviewSkills],
   ['ActiveRequestsScreen', ActiveRequestsScreen],
   ['ActiveRequestScreen', ActiveRequestScreen],
   ['AcceptedRequestScreen', AcceptedRequestScreen],
@@ -77,6 +84,7 @@ export const SCREENS = [
   ['WorkerDirectoryScreen', WorkerDirectoryScreen],
   ['WorkerDetailsVerificationScreen', WorkerDetailsVerificationScreen],
   ['WorkerCertificationDetail', WorkerCertificationDetail],
+  ['WorkerCertificateRecordDetail', WorkerCertificateRecordDetail],
   ['PoliceVerificationPortal', PoliceVerificationPortal],
   ['IssueCharacterCertificateScreen', IssueCharacterCertificateScreen],
   ['CharacterCertificateScreen', CharacterCertificateScreen],
@@ -91,6 +99,21 @@ export const SCREENS = [
   ['CourseCertificateScreen', CourseCertificateScreen],
 ];
 
+/** Screens that must stay reachable without a session. */
+const PUBLIC_SCREENS = new Set(['Login', 'Signup']);
+
+/** Session guard: RN keeps the token in AsyncStorage and the navigator never
+ *  shows an inner screen without it; on the web every URL is reachable, so the
+ *  same rule is enforced here. Reads localStorage on every render, which is
+ *  what Logout (localStorage.clear) relies on. */
+function Guarded({ name, component }) {
+  if (PUBLIC_SCREENS.has(name)) return <Screen name={name} component={component} />;
+  let token = null;
+  try { token = window.localStorage.getItem('userToken'); } catch { token = null; }
+  if (!token) return <Navigate to={pathFor('Login')} replace />;
+  return <Screen name={name} component={component} />;
+}
+
 export default function App() {
   return (
     <>
@@ -99,7 +122,7 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to={pathFor('Login')} replace />} />
             {SCREENS.map(([name, component]) => (
-              <Route key={name} path={pathFor(name)} element={<Screen name={name} component={component} />} />
+              <Route key={name} path={pathFor(name)} element={<Guarded name={name} component={component} />} />
             ))}
             <Route path="*" element={<Navigate to={pathFor('Login')} replace />} />
           </Route>

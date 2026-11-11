@@ -95,7 +95,7 @@
 
 import Geolocation from '@/web/Geolocation';
 import AsyncStorage from '@/web/AsyncStorage';
-import { API_DASHBOARD } from '../config';
+import { API_DASHBOARD } from '../../config';
 import { PermissionsAndroid, Platform, sx } from '@/web';
 
 
@@ -151,8 +151,8 @@ export const detectAndUpdateWorkerLocation = async () => {
             await AsyncStorage.setItem('workerLongitude', longitude.toString());
 
             try {
-              const response = await fetch(`${API_DASHBOARD}/update-worker-location`, {
-                method: 'POST',
+              const response = await fetch(`${API_DASHBOARD}/UpdateWorkerLocation`, {
+                method: 'PUT',
                 headers: {
                   'Content-Type': 'application/json',
                   'Authorization': `Bearer ${token}`,

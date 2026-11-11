@@ -148,6 +148,29 @@ const RatingAndReviewsScreen = ({ navigation, route }) => {
                                     </div>
                                 </div>
                                 <span className="t" style={sx(styles.commentText)}>"{item.comment}"</span>
+                                {Array.isArray(item.skillRatings) && item.skillRatings.length > 0 ? (
+                                    <div className="v" style={sx(styles.skillRatingsBox)}>
+                                        <span className="t" style={sx(styles.skillRatingsTitle)}>Per Skills ratings</span>
+                                        {item.skillRatings.map((skill, skillIndex) => (
+                                            <div className="v" key={`${skill.skillsId || skill.name}-${skillIndex}`} style={sx(styles.skillRatingRow)}>
+                                                <span className="t" style={sx(styles.skillRatingName)}>{skill.name || 'Skill'}</span>
+                                                <div className="v" style={sx(styles.skillRatingRight)}>
+                                                    <div className="v" style={sx(styles.skillStars)}>
+                                                        {[1, 2, 3, 4, 5].map((star) => (
+                                                            <Icon
+                                                                key={star}
+                                                                name={star <= Number(skill.score || 0) ? 'star' : 'star-outline'}
+                                                                size={13}
+                                                                color={star <= Number(skill.score || 0) ? '#F59E0B' : '#CBD5E1'}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                    <span className="t" style={sx(styles.skillScoreText)}>{Number(skill.score || 0)}/5</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : null}
                             </div>
                         ))
                     ) : (
@@ -288,6 +311,25 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         lineHeight: 18,
     },
+    skillRatingsBox: {
+        marginTop: 12,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#E5E7EB',
+    },
+    skillRatingsTitle: { fontSize: 12, fontWeight: '700', color: '#1F2937', marginBottom: 4 },
+    skillRatingRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 5,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+    },
+    skillRatingName: { flex: 1, fontSize: 12, color: '#475569', marginRight: 8 },
+    skillRatingRight: { flexDirection: 'row', alignItems: 'center' },
+    skillStars: { flexDirection: 'row' },
+    skillScoreText: { fontSize: 11, fontWeight: '700', color: '#0F172A', marginLeft: 5 },
     loaderContainer: {
         flex: 1,
         justifyContent: 'center',

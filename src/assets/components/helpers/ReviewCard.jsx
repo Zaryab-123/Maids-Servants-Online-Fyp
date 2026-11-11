@@ -43,7 +43,8 @@ function Stars({ value, size }) {
  *  - workedPeriod  optional "Worked for X" string
  *  - endType       'Terminated' | 'Resigned' | anything (badge only for the first two)
  *  - text          the free-text remarks/comment
- *  - criteria      [{ name, score }] — per-criterion breakdown (hidden when empty)
+ *  - criteria      [{ name, score }] — generic-criteria breakdown (hidden when empty)
+ *  - skillRatings  [{ skillsId, name, score }] — selected-skill scores (separate from overall)
  *  - accentColor   accent for the name/border (default brand blue)
  */
 export default function ReviewCard({
@@ -56,6 +57,7 @@ export default function ReviewCard({
   endType = '',
   text = '',
   criteria = [],
+  skillRatings = [],
   accentColor = '#3B82F6',
 }) {
   const badge = resolveEndBadge(endType);
@@ -99,6 +101,7 @@ export default function ReviewCard({
       {!!text && <span className="t" style={sx(styles.text)}>{text}</span>}
 
       <CriteriaBreakdown criteria={criteria} accentColor={accentColor} />
+      <CriteriaBreakdown criteria={skillRatings} title="Selected skill ratings" accentColor={accentColor} />
     </div>
   );
 }

@@ -1,250 +1,206 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
-import { SERVER_BASE, API_DASHBOARD } from '../../config';
 import NotificationHelper from '../Notification/NotificationHelper';
-
-import DateTimePicker from '@/web/DateTimePicker';
-import { confirmAction } from '../helpers/courseApi';
-
-// Local calendar date as YYYY-MM-DD (toISOString() would shift it back a day in UTC+5).
-const toLocalYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+import { getActiveResignationJob, submitResignation } from '../helpers/workerResignationsApi';
 import { Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 
-
+/**
+ * Resign from Job — parity port of assets/components/Worker/LeaveJobScreen.js.
+ *
+ * Two deliberate removals compared with the old web screen:
+ *   1. the "Proposed Last Working Day" picker — React Native has no such choice
+ *      (the notice starts on submission and is fixed by the workflow), and
+ *      SubmitResignation ignores LastWorkingDate entirely;
+ *   2. the Client Rating / Client Feedback block and the SubmitWorkerReviewToClient
+ *      call it made right after submitting. RN states this explicitly:
+ *      "No rating or review is required now. After acceptance, your notification bell
+ *      will let you review your Client." The backend agrees — SubmitWorkerReviewToClient
+ *      is rejected until the resignation is accepted (`canReview` on
+ *      GetWorkerResignationReview), so the old flow always ended with
+ *      "your rating could not be saved". The review now happens on
+ *      WorkerResignationReviewScreen, opened from the "Resignation accepted"
+ *      notification.
+ */
 const LeaveJobScreen = ({ navigation }) => {
     const [reason, setReason] = useState('');
-    const [isLoading, setIsLoading] = useState(true);
-    const [jobData, setJobData] = useState(null);
-    const [lastWorkingDay, setLastWorkingDay] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
-    const [showDatePicker, setShowDatePicker] = useState(false);
-    const [rating, setRating] = useState(0);
-    const [reviewComment, setReviewComment] = useState('');
+    const [job, setJob] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState('');
 
-    useEffect(() => {
-        fetchActiveJob();
-    }, []);
+    const active = useRef(false);
+    const busy = useRef(false);
+    const version = useRef(0);
+    const requests = useRef(new Set());
 
-    const fetchActiveJob = async () => {
+    const pending = job?.isResignationPending === true;
+
+    const load = async () => {
+        const requestId = ++version.current;
+        const controller = new AbortController();
+        requests.current.add(controller);
+        setLoading(true);
+        setError('');
         try {
             const workerId = await AsyncStorage.getItem('workerId');
-            const token = await AsyncStorage.getItem('userToken');
-
-            if (!workerId) {
-                NotificationHelper.showError("Worker identity not found. Please re-login.");
-                navigation.goBack();
-                return;
-            }
-
-            const response = await fetch(`${API_DASHBOARD}/GetActiveJob/${workerId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setJobData(data);
-            } else {
-                const errData = await response.json().catch(() => ({}));
-                NotificationHelper.showError(errData.message || "No active job found to resign from.");
-                navigation.goBack();
-            }
-        } catch (error) {
-            console.error(error);
-            NotificationHelper.showError("Connection error. Check API configuration.");
+            const data = await getActiveResignationJob(workerId, controller.signal);
+            if (!active.current || version.current !== requestId) return;
+            setJob(data);
+        } catch (e) {
+            if (!active.current || version.current !== requestId) return;
+            setError(e.message);
+            if (e.status === 401) navigation.replace('Login');
         } finally {
-            setIsLoading(false);
+            requests.current.delete(controller);
+            if (active.current && version.current === requestId) setLoading(false);
         }
     };
 
-    const handleResign = async () => {
+    useEffect(() => {
+        active.current = true;
+        load();
+        return () => {
+            active.current = false;
+            version.current++;
+            requests.current.forEach((controller) => controller.abort());
+            requests.current.clear();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const submit = async () => {
+        if (busy.current || pending || !job?.interviewId) return;
         if (!reason.trim()) {
-            NotificationHelper.showError("Please provide a reason for resignation.");
+            setError('Please provide a reason for resignation.');
             return;
         }
 
-        if (rating === 0) {
-            NotificationHelper.showError("Please provide a rating for the client.");
-            return;
-        }
-
-        if (!jobData || !jobData.interviewId) {
-            NotificationHelper.showError("Process error: Job data missing.");
-            return;
-        }
-
+        busy.current = true;
+        setSubmitting(true);
+        setError('');
+        const requestId = version.current;
+        const controller = new AbortController();
+        requests.current.add(controller);
         try {
-            const token = await AsyncStorage.getItem('userToken');
-
-            const payload = {
-                InterviewId: jobData.interviewId,
-                ResignationReason: reason,
-                LastWorkingDate: toLocalYMD(lastWorkingDay)
-            };
-
-            console.log("Submitting Resignation:", payload);
-
-            const response = await fetch(`${API_DASHBOARD}/SubmitResignation`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                let reviewSaved = true;
-                try {
-                    const reviewRes = await fetch(`${API_DASHBOARD}/SubmitWorkerReviewToClient`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            InterviewId: jobData.interviewId,
-                            Rating: rating,
-                            Comment: reviewComment
-                        })
-                    });
-                    if (!reviewRes.ok) reviewSaved = false;
-                } catch (e) {
-                    reviewSaved = false;
-                    console.error("Review error", e);
-                }
-
-                if (reviewSaved) {
-                    NotificationHelper.showSuccess("Resignation submitted successfully.");
-                } else {
-                    NotificationHelper.showError("Your resignation was submitted, but your rating could not be saved.");
-                }
-                navigation.navigate('WorkerDashboardScreen');
-            } else {
-                let errorMsg = "Failed to submit resignation.";
-                try {
-                    // Read body ONCE as text, then parse in-memory to avoid "Already read" error
-                    const rawText = await response.text();
-                    console.log("Server Error Response:", rawText);
-                    const errJson = JSON.parse(rawText);
-                    errorMsg = errJson.message || errorMsg;
-                } catch (e) {
-                    // Body was empty or not JSON — use default message
-                    console.log("Could not parse error response:", e.message);
-                }
-                NotificationHelper.showError(errorMsg);
+            await submitResignation(job.interviewId, reason, controller.signal);
+            if (!active.current || version.current !== requestId) return;
+            NotificationHelper.showSuccess('Resignation submitted. You can review your client after acceptance.');
+            setJob((prev) => ({ ...prev, isResignationPending: true }));
+            navigation.navigate('WorkerDashboardScreen');
+        } catch (e) {
+            if (!active.current || version.current !== requestId) return;
+            setError(e.message);
+            if (e.status === 401) navigation.replace('Login');
+        } finally {
+            requests.current.delete(controller);
+            if (active.current && version.current === requestId) {
+                busy.current = false;
+                setSubmitting(false);
             }
-        } catch (error) {
-            console.error(error);
-            NotificationHelper.showError("Network error. Please try again.");
         }
     };
-
-    if (isLoading) {
-        return (
-            <div className="v" style={sx(styles.centerContainer)}>
-                <Spinner size="large" color="#1E64D3" />
-            </div>
-        );
-    }
 
     return (
         <div className="v screen" style={sx(styles.container)}>
-            
             <div className="v" style={sx(styles.bgDecoration)} />
 
-            <div className="v scroll" ><div className="v scroll-content" style={sx(styles.scrollContent)}>
+            <div className="v scroll"><div className="v scroll-content" style={sx(styles.scrollContent)}>
                 <div className="v" style={sx(styles.header)}>
-                    <button className="v btn" type="button" onClick={press(() => navigation.goBack())} style={sx(styles.backBtn)}>
+                    <button className="v btn" type="button" onClick={press(() => navigation.goBack())} aria-label="Back" style={sx(styles.backBtn)}>
                         <Icon name="arrow-left" size={24} color="#333" />
                     </button>
                     <span className="t" style={sx(styles.headerTitle)}>Resign from Job</span>
                     <img className="img" alt="" src={imgSrc({ uri: 'https://servantmaidonline.com/logo.png' })} style={sx(styles.logo)} />
                 </div>
 
-                {jobData && (
-                    <div className="v" style={sx(styles.jobCard)}>
-                        <div className="v" style={sx(styles.jobInfo)}>
-                            <span className="t" style={sx(styles.employerName)}>{jobData.employerName}</span>
-                            <span className="t" style={sx(styles.employerAddress)}>{jobData.employerAddress}</span>
-                        </div>
-                        <div className="v" style={sx(styles.noticeBadge)}>
-                            <span className="t" style={sx(styles.noticeText)}>Standard 1-Week Notice</span>
-                        </div>
+                {loading ? (
+                    <div className="v" style={sx(styles.center)}>
+                        <Spinner size="large" color="#1E64D3" />
                     </div>
-                )}
+                ) : null}
 
-                <div className="v" style={sx(styles.inputGroup)}>
-                    <span className="t" style={sx(styles.inputLabel)}>Proposed Last Working Day</span>
-                    <button className="v btn" type="button"
-                        style={sx(styles.dateDisplay)}
-                        onClick={press(() => setShowDatePicker(true))}
-                        
-                    >
-                        <span className="t" style={sx(styles.dateText)}>{lastWorkingDay.toLocaleDateString('en-US', {
-                            weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-                        })}</span>
-                        <Icon name="calendar-clock" size={24} color="#1E64D3" />
-                    </button>
-                </div>
-
-                {showDatePicker && (
-                    <DateTimePicker
-                        value={lastWorkingDay}
-                        mode="date"
-                        display="default"
-                        minimumDate={new Date()} // Cannot resign in the past
-                        onChange={(event, selectedDate) => {
-                            setShowDatePicker(false);
-                            if (selectedDate) setLastWorkingDay(selectedDate);
-                        }}
-                    />
-                )}
-
-                <div className="v" style={sx(styles.inputGroup)}>
-                    <span className="t" style={sx(styles.inputLabel)}>Reason for Leaving</span>
-                    <textarea className="input"
-                        style={{ ...sx(styles.reasonInput), '--ph': "#999" }}
-                        placeholder="Please explain why you are leaving..."
-                        
-                        
-                        rows={3}
-                        value={(reason) ?? ''}
-                        onChange={changeText(setReason)}
-                    />
-                </div>
-
-                <div className="v" style={sx(styles.inputGroup)}>
-                    <span className="t" style={sx(styles.inputLabel)}>Client Rating</span>
-                    <div className="v" style={sx({ flexDirection: 'row', marginTop: 5, marginBottom: 10 })}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                            <button className="v btn" type="button" key={star} onClick={press(() => setRating(star))}>
-                                <Icon name={star <= rating ? "star" : "star-outline"} size={40} color="#FFD700" style={{ marginRight: 8 }} />
+                {!!error && (
+                    <div className="v" style={sx(styles.errorBox)} role="alert">
+                        <span className="t" style={sx(styles.errorText)}>{error}</span>
+                        {!job && (
+                            <button className="v btn" type="button" onClick={press(() => load())} data-testid="resignation-load-retry">
+                                <span className="t" style={sx(styles.retryLink)}>Retry</span>
                             </button>
-                        ))}
+                        )}
                     </div>
-                </div>
+                )}
 
-                <div className="v" style={sx(styles.inputGroup)}>
-                    <span className="t" style={sx(styles.inputLabel)}>Client Feedback</span>
-                    <textarea className="input"
-                        style={{ ...sx(styles.reasonInput), '--ph': "#999" }}
-                        placeholder="Share your experience working with this client..."
-                        
-                        
-                        rows={3}
-                        value={(reviewComment) ?? ''}
-                        onChange={changeText(setReviewComment)}
-                    />
-                </div>
+                {!loading && job && (
+                    <>
+                        <div className="v" style={sx(styles.jobCard)}>
+                            <span className="t" style={sx(styles.employerName)}>{job.employerName}</span>
+                            <span className="t" style={sx(styles.employerAddress)}>{job.employerAddress}</span>
+                            <div className="v" style={sx(styles.noticeBadge)}>
+                                <span className="t" style={sx(styles.noticeText)}>7-Day Notice</span>
+                            </div>
+                            <span className="t" style={sx(styles.muted)}>
+                                Your notice starts when you submit. You stay on this job until the Client accepts
+                                your resignation or the seven days expire.
+                            </span>
+                        </div>
 
-                <button className="v btn" type="button" style={sx(styles.submitBtn)} onClick={press(() => confirmAction('Submit resignation?', 'Your resignation notice will be sent to the client. This cannot be undone.', 'Submit', handleResign))}>
-                    <span className="t" style={sx(styles.submitBtnText)}>Submit Resignation Notice</span>
-                </button>
+                        {pending ? (
+                            <div className="v" style={sx(styles.jobCard)} data-testid="resignation-pending">
+                                <span className="t" style={sx(styles.pendingTitle)}>Resignation already pending</span>
+                                <span className="t" style={sx(styles.muted)}>
+                                    You are still working during the notice period. Your review becomes available
+                                    after acceptance.
+                                </span>
+                                {job.noticeEndsAtUtc ? (
+                                    <span className="t" style={sx(styles.muted)}>
+                                        Automatic acceptance: {new Date(job.noticeEndsAtUtc).toLocaleString()}
+                                    </span>
+                                ) : (
+                                    <span className="t" style={sx(styles.muted)}>
+                                        This older resignation requires the Client’s manual acceptance.
+                                    </span>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <div className="v" style={sx(styles.inputGroup)}>
+                                    <span className="t" style={sx(styles.inputLabel)}>Reason for Leaving</span>
+                                    <textarea className="input"
+                                        style={{ ...sx(styles.reasonInput), '--ph': "#999" }}
+                                        placeholder="Please explain why you are leaving..."
+                                        rows={4}
+                                        maxLength={4000}
+                                        value={reason ?? ''}
+                                        onChange={changeText(setReason)}
+                                        disabled={submitting}
+                                        data-testid="resignation-reason"
+                                    />
+                                    <span className="t" style={sx(styles.muted)}>
+                                        No rating or review is required now. After acceptance, your notification
+                                        bell will let you review your Client.
+                                    </span>
+                                </div>
 
-                <button className="v btn" type="button" onClick={press(() => navigation.goBack())} style={sx(styles.cancelBtn)}>
-                    <span className="t" style={sx(styles.cancelBtnText)}>Keep Current Job</span>
-                </button>
+                                <button className="v btn" type="button"
+                                    style={sx([styles.submitBtn, submitting && styles.submitBtnDisabled])}
+                                    onClick={press(submit)}
+                                    disabled={submitting}
+                                    data-testid="submit-resignation"
+                                >
+                                    {submitting
+                                        ? <Spinner color="#FFF" />
+                                        : <span className="t" style={sx(styles.submitBtnText)}>Submit Resignation</span>}
+                                </button>
+                            </>
+                        )}
+
+                        <button className="v btn" type="button" onClick={press(() => navigation.goBack())} style={sx(styles.cancelBtn)}>
+                            <span className="t" style={sx(styles.cancelBtnText)}>Keep Current Job</span>
+                        </button>
+                    </>
+                )}
             </div></div>
         </div>
     );
@@ -252,7 +208,7 @@ const LeaveJobScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#FFF' },
-    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    center: { paddingTop: 40, alignItems: 'center' },
     bgDecoration: {
         position: 'absolute',
         top: -50,
@@ -297,21 +253,15 @@ const styles = StyleSheet.create({
         marginTop: 15
     },
     noticeText: { color: '#1E64D3', fontSize: 12, fontWeight: 'bold' },
+    muted: { color: '#64748B', fontSize: 13, lineHeight: '21px', marginTop: 10 },
+    pendingTitle: { color: '#B45309', fontSize: 16, fontWeight: 'bold' },
+
+    errorBox: { backgroundColor: '#FEF2F2', padding: 14, borderRadius: 12, marginBottom: 18 },
+    errorText: { color: '#B91C1C', lineHeight: '20px' },
+    retryLink: { color: '#1E64D3', fontWeight: 'bold', marginTop: 10 },
 
     inputGroup: { marginBottom: 25 },
     inputLabel: { fontSize: 16, fontWeight: 'bold', color: '#000', marginBottom: 12 },
-    dateDisplay: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#DDD',
-        borderRadius: 12,
-        paddingHorizontal: 15,
-        height: 55,
-        backgroundColor: '#F9F9F9'
-    },
-    dateText: { fontSize: 16, color: '#333' },
     reasonInput: {
         borderWidth: 1,
         borderColor: '#DDD',
@@ -332,6 +282,7 @@ const styles = StyleSheet.create({
         marginTop: 10,
         elevation: 2
     },
+    submitBtnDisabled: { opacity: 0.6 },
     submitBtnText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
     cancelBtn: { marginTop: 20, alignItems: 'center', padding: 10 },
     cancelBtnText: { color: '#666', fontSize: 16, fontWeight: '500' }

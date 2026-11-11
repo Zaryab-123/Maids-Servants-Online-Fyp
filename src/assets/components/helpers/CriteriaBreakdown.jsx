@@ -20,10 +20,10 @@ function Stars({ value, size }) {
 }
 
 /**
- * Tap-to-expand per-criterion breakdown: [{ name, score }].
- * Renders nothing when the list is empty (e.g. old reviews with no criteria).
+ * Tap-to-expand score list: [{ name, score }]. Used separately for generic
+ * criteria and selected skills; renders nothing when the list is empty.
  */
-export default function CriteriaBreakdown({ criteria = [], accentColor = '#3B82F6', defaultOpen = false }) {
+export default function CriteriaBreakdown({ criteria = [], title = 'Criteria breakdown', accentColor = '#3B82F6', defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   const list = Array.isArray(criteria) ? criteria : [];
   if (list.length === 0) return null;
@@ -35,7 +35,7 @@ export default function CriteriaBreakdown({ criteria = [], accentColor = '#3B82F
         style={sx(styles.toggle)}
         
       >
-        <span className="t" style={sx([styles.toggleText, { color: accentColor }])}>Criteria breakdown</span>
+        <span className="t" style={sx([styles.toggleText, { color: accentColor }])}>{title}</span>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={accentColor} />
       </button>
 

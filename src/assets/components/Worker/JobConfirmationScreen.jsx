@@ -7,6 +7,7 @@ import { SERVER_BASE } from '../../config';
 import JobTypeBadge from '../helpers/JobTypeBadge';
 import SlotTimeLabel from '../helpers/SlotTimeLabel';
 import ResidenceBadge from '../helpers/ResidenceBadge';
+import ExclusiveNotice from '../helpers/ExclusiveNotice';
 import { RefreshControl, ScrollView, Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 
 
@@ -115,7 +116,7 @@ const JobConfirmationScreen = ({ navigation }) => {
     const renderJobCard = (item) => {
         const {
             id, clientId, clientName, clientImage, clientRating,
-            date, role, address, message, type, status, jobType, isResidenceProvided, slotStartTime, slotEndTime
+            date, role, address, message, type, status, jobType, isResidenceProvided, isExclusive, slotStartTime, slotEndTime, selectedSkills
         } = item;
         const hiringId = id;
 
@@ -180,6 +181,7 @@ const JobConfirmationScreen = ({ navigation }) => {
         const detailRows = [
             { icon: 'calendar-range', label: 'Interview Date', value: date || 'Not set' },
             { icon: 'briefcase-outline', label: 'Job Role', value: role || 'Not set' },
+            { icon: 'briefcase-check-outline', label: 'Selected Skills', value: Array.isArray(selectedSkills) && selectedSkills.length > 0 ? selectedSkills.join(', ') : 'Not specified' },
             { icon: 'tag-outline', label: 'Job Type', value: jobType || 'Full-Time' },
             { icon: 'map-marker-outline', label: 'Address', value: address || 'Not set' },
         ];
@@ -257,6 +259,12 @@ const JobConfirmationScreen = ({ navigation }) => {
                     </div>
                 </div>
 
+                <ExclusiveNotice
+                    item={{ isExclusive, IsExclusive: isExclusive, jobType }}
+                    variant="offer"
+                    style={{ marginHorizontal: 16 }}
+                />
+
                 <div className="v" style={sx(styles.divider)} />
 
                 {/* Row 4 — the offer details */}
@@ -267,7 +275,7 @@ const JobConfirmationScreen = ({ navigation }) => {
                                 <Icon name={row.icon} size={15} color={statusTextColor} />
                             </div>
                             <span className="t" style={sx(styles.detailLabel)}>{row.label}</span>
-                            <span className="t" style={sx(styles.detailValue, 2)} >{row.value}</span>
+                            <span className="t" style={sx(styles.detailValue, row.label === 'Selected Skills' ? undefined : 2)} >{row.value}</span>
                         </div>
                     ))}
                 </div>

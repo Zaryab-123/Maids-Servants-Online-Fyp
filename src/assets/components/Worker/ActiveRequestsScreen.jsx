@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
@@ -7,7 +7,9 @@ import { API_DASHBOARD, SERVER_BASE } from '../../config';
 import JobTypeBadge from '../helpers/JobTypeBadge';
 import SlotTimeLabel from '../helpers/SlotTimeLabel';
 import ResidenceBadge from '../helpers/ResidenceBadge';
+import ExclusiveNotice from '../helpers/ExclusiveNotice';
 import { RefreshControl, ScrollView, Spinner, StyleSheet, imgSrc, press, sx } from '@/web';
+import { describeHttpFailure, isSessionExpired, readJsonSafely } from '../helpers/httpError';
 import __img_logo_png from '../../images/logo.png';
 
 
@@ -17,28 +19,48 @@ const ActiveRequestsScreen = ({ navigation }) => {
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     const API_BASE = API_DASHBOARD;
+    // React.StrictMode mounts effects twice in development; without this guard
+    // one load produced two identical error toasts (and two API calls).
+    const inFlight = useRef(false);
 
     useEffect(() => {
         fetchRequests();
     }, []);
 
     const fetchRequests = async (showLoader = true) => {
+        if (inFlight.current) return;
+        inFlight.current = true;
         if (showLoader) setIsLoading(true);
+        const url = `${API_BASE}/GetWorkerRequests`;
         try {
             const token = await AsyncStorage.getItem('userToken');
-            const response = await fetch(`${API_BASE}/GetWorkerRequests`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setRequests(Array.isArray(data) ? data : []);
-            } else {
-                NotificationHelper.showError("Failed to load requests.");
+            const role = (await AsyncStorage.getItem('userRole')) || '';
+            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+
+            if (!response.ok) {
+                // /GetWorkerRequests is [Authorize(Roles = "Worker")]. A client
+                // session hitting this screen returns 403 — say so, instead of
+                // the old catch-all "Failed to load requests."
+                const data = await readJsonSafely(response);
+                console.error('[ActiveRequestsScreen] %s → HTTP %s', url, response.status, data);
+                NotificationHelper.showError(describeHttpFailure({
+                    status: response.status, data, resource: 'your interview requests',
+                    actualRole: role, requiredRole: 'Worker',
+                }));
+                if (isSessionExpired(response.status)) navigation.replace('Login');
+                setRequests([]);
+                return;
             }
+
+            const data = await readJsonSafely(response);
+            setRequests(Array.isArray(data) ? data : []);
         } catch (error) {
-            console.error(error);
-            NotificationHelper.showError("Could not connect to server.");
+            console.error('[ActiveRequestsScreen] load failed:', url, error);
+            NotificationHelper.showError(describeHttpFailure({
+                error, url, resource: 'your interview requests',
+            }));
         } finally {
+            inFlight.current = false;
             setIsLoading(false);
             setIsRefreshing(false);
         }
@@ -186,6 +208,8 @@ const ActiveRequestsScreen = ({ navigation }) => {
                                         small
                                     />
                                 </div>
+
+                                <ExclusiveNotice item={item} variant="request" />
 
                                 <div className="v" style={sx(styles.divider)} />
 

@@ -24,6 +24,7 @@ const NAV = {
   ],
   Worker: [
     { to: 'WorkerDashboardScreen', label: 'Dashboard', icon: 'view-dashboard-outline' },
+    { to: 'WorkerNotificationsScreen', label: 'Notifications', icon: 'bell-outline' },
     { to: 'ActiveRequestsScreen', label: 'Interview Requests', icon: 'clipboard-text-clock-outline' },
     { to: 'JobConfirmationScreen', label: 'Job Offers', icon: 'briefcase-check-outline' },
     { to: 'WorkerCourseCatalogueScreen', label: 'Browse Courses', icon: 'school-outline' },

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Icon from '@/web/Icon';
 import { SERVER_BASE, API_DASHBOARD } from '../../config';
 import AsyncStorage from '@/web/AsyncStorage';
+import ReviewEndReason from '../helpers/ReviewEndReason';
 import { Spinner, StyleSheet, imgSrc, press, sx } from '@/web';
 
 
@@ -144,6 +145,7 @@ const fetchClientProfile = async () => {
                   <span className="t" style={sx(styles.singleRatingText)}>{item.rating}</span>
                 </div>
               </div>
+              <ReviewEndReason endType={item.endReasonType || item.endType} reason={item.endReason} />
               <span className="t" style={sx(styles.comment)}>{item.comment}</span>
               <span className="t" style={sx(styles.date)}>{item.date}</span>
               {item.workedPeriod ? (

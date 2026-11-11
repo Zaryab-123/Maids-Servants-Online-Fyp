@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
@@ -6,39 +6,56 @@ import { SERVER_BASE } from '../../config';
 import { Alert, Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 
 
-const WorkerTerminationScreen = ({ navigation }) => {
+const WorkerTerminationScreen = ({ navigation, route }) => {
+    const terminationId = route?.params?.terminationId;
+    const requestVersion = useRef(0);
     const [termination, setTermination] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [rating, setRating] = useState(0);
     const [reviewComment, setReviewComment] = useState('');
     const [reviewSubmitted, setReviewSubmitted] = useState(false);
+    const [loadError, setLoadError] = useState('');
 
-    useEffect(() => {
-        fetchTerminationStatus();
-    }, []);
-
-    const fetchTerminationStatus = async () => {
+    const fetchTerminationStatus = useCallback(async () => {
+        const request = ++requestVersion.current;
+        setIsLoading(true);
+        setTermination(null);
+        setLoadError('');
+        setReviewSubmitted(false);
+        setRating(0);
+        setReviewComment('');
         try {
             const workerId = await AsyncStorage.getItem('workerId');
             const token = await AsyncStorage.getItem('userToken');
-
-            const response = await fetch(`${SERVER_BASE}/api/Dashboard/GetLatestTermination/${workerId}`, {
+            const response = await fetch(`${SERVER_BASE}/api/Dashboard/GetLatestTermination/${workerId}${terminationId ? `?terminationId=${encodeURIComponent(terminationId)}` : ''}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
             if (response.ok) {
                 const data = await response.json();
+                if (request !== requestVersion.current) return;
                 setTermination(data);
-                // The backend now reports whether this worker already rated the
-                // client for this contract, so the star form stays hidden.
+                // The backend reports whether this worker already reviewed this contract.
                 setReviewSubmitted(!!data.workerReviewSubmitted);
+            } else if (response.status === 404 && terminationId) {
+                if (request === requestVersion.current) setLoadError('This termination record is no longer available. The notification remains in your history.');
+            } else if (response.status !== 404 && request === requestVersion.current) {
+                setLoadError('Could not load termination details. Please try again.');
             }
         } catch (error) {
-            console.error("Error fetching termination status:", error);
+            if (request === requestVersion.current) {
+                console.error("Error fetching termination status:", error);
+                setLoadError('Could not connect to the server. Please try again.');
+            }
         } finally {
-            setIsLoading(false);
+            if (request === requestVersion.current) setIsLoading(false);
         }
-    };
+    }, [terminationId]);
+
+    useEffect(() => {
+        fetchTerminationStatus();
+        return () => { requestVersion.current++; };
+    }, [fetchTerminationStatus]);
 
     const handleSubmitReview = async () => {
         if (rating === 0) {
@@ -104,10 +121,11 @@ const WorkerTerminationScreen = ({ navigation }) => {
                         <div className="v" style={sx(styles.iconCircle)}>
                             <Icon name="check-decagram" size={80} color="#4CAF50" />
                         </div>
-                        <span className="t" style={sx(styles.emptyTitle)}>Good News!</span>
+                        <span className="t" style={sx(styles.emptyTitle)}>{loadError ? 'Details unavailable' : 'Good News!'}</span>
                         <span className="t" style={sx(styles.emptySubtitle)}>
-                            You currently have no recorded terminations. Your professional record is clean.
+                            {loadError || 'You currently have no recorded terminations. Your professional record is clean.'}
                         </span>
+                        {loadError ? <button className="v btn" type="button" style={sx(styles.goBackBtn)} onClick={press(fetchTerminationStatus)}><span className="t" style={sx(styles.goBackText)}>Retry</span></button> : null}
                         <button className="v btn" type="button"
                             style={sx(styles.goBackBtn)}
                             onClick={press(() => navigation.goBack())}
@@ -132,9 +150,9 @@ const WorkerTerminationScreen = ({ navigation }) => {
                             <div className="v" style={sx(styles.dateRow)}>
                                 <Icon name="calendar-range" size={20} color="#666" />
                                 <span className="t" style={sx(styles.dateText)}>
-                                    Terminated on: {new Date(termination.terminatedDate).toLocaleDateString('en-US', {
+                                    Terminated on: {termination.terminatedDate ? new Date(termination.terminatedDate).toLocaleDateString('en-US', {
                                         month: 'long', day: 'numeric', year: 'numeric'
-                                    })}
+                                    }) : 'Date not provided'}
                                 </span>
                             </div>
                         </div>

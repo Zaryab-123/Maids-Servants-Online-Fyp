@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
@@ -7,6 +7,8 @@ import { SERVER_BASE } from '../../config';
 import JobTypeBadge from '../helpers/JobTypeBadge';
 import SlotTimeLabel from '../helpers/SlotTimeLabel';
 import { Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
+import { describeHttpFailure, isSessionExpired, readJsonSafely } from '../helpers/httpError';
+import { ExclusiveInline } from '../helpers/ExclusiveNotice';
 import __img_logo_png from '../../images/logo.png';
 import __img_default_user_png from '../../images/default-user.png';
 
@@ -26,27 +28,52 @@ const ActiveRequestScreen = ({ navigation }) => {
         });
     };
 
+    // React.StrictMode double-invokes effects in development; one load, one toast.
+    const inFlight = useRef(false);
+
     const fetchRequests = useCallback(async () => {
+        if (inFlight.current) return;
+        inFlight.current = true;
+        const clientId = await AsyncStorage.getItem('clientId');
+        const token = await AsyncStorage.getItem('userToken');
+        const role = (await AsyncStorage.getItem('userRole')) || '';
+        const url = `${SERVER_BASE}/api/Dashboard/GetActiveRequests/${clientId}`;
         try {
             setLoading(true);
-            const clientId = await AsyncStorage.getItem('clientId');
-            const token = await AsyncStorage.getItem('userToken');
 
-            const response = await fetch(
-                `${SERVER_BASE}/api/Dashboard/GetActiveRequests/${clientId}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                setRequests(sortRequestsByInterviewIdDesc(data));
+            if (!clientId || clientId === 'null' || clientId === 'undefined') {
+                NotificationHelper.showError('Your session has no client id. Please log out and sign in again.');
+                return;
             }
+
+            const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+            if (!response.ok) {
+                // Previously there was no `else` branch here, so a 401/404/500
+                // silently rendered as "No active requests found."
+                const data = await readJsonSafely(response);
+                console.error('[ActiveRequestScreen] %s → HTTP %s', url, response.status, data);
+                NotificationHelper.showError(describeHttpFailure({
+                    status: response.status, data, resource: 'your interview requests',
+                    actualRole: role, requiredRole: 'Client',
+                }));
+                if (isSessionExpired(response.status)) navigation.replace('Login');
+                setRequests([]);
+                return;
+            }
+
+            const data = await readJsonSafely(response);
+            setRequests(Array.isArray(data) ? sortRequestsByInterviewIdDesc(data) : []);
         } catch (error) {
-            NotificationHelper.showError('Failed to load requests.');
+            console.error('[ActiveRequestScreen] load failed:', url, error);
+            NotificationHelper.showError(describeHttpFailure({
+                error, url, resource: 'your interview requests',
+            }));
         } finally {
+            inFlight.current = false;
             setLoading(false);
         }
-    }, []);
+    }, [navigation]);
 
 
     useEffect(() => {
@@ -121,7 +148,8 @@ const ActiveRequestScreen = ({ navigation }) => {
         const matchesSearch =
             !searchValue ||
             item.workerName?.toLowerCase().includes(searchValue) ||
-            item.workerSkill?.toLowerCase().includes(searchValue);
+            item.workerSkill?.toLowerCase().includes(searchValue) ||
+            (Array.isArray(item.selectedSkills) && item.selectedSkills.some(skill => skill.toLowerCase().includes(searchValue)));
 
         if (!matchesSearch) return false;
 
@@ -207,6 +235,8 @@ const ActiveRequestScreen = ({ navigation }) => {
                         const isRejected = norm.includes('reject');
                         const isApproved = hiringDecision === 'Accepted';
                         const isFinalCard = isApproved || isResigned || isTerminated;
+                        const isExclusiveFullTime = (item.isExclusive === true || item.IsExclusive === true)
+                            && String(item.jobType || 'Full-Time').toLowerCase() === 'full-time';
 
                         let badgeLabel = 'Pending';
                         let badgeBg = '#EAB308';
@@ -282,8 +312,15 @@ const ActiveRequestScreen = ({ navigation }) => {
                                             <span className="t" style={sx([styles.badgeText, { color: badgeColor }])}>{badgeLabel}</span>
                                         </div>
                                         <JobTypeBadge jobType={item.jobType} small style={styles.jobTypeBadge} />
+                                        {/* Shows as soon as the row carries isExclusive (see CHANGES.md:
+                                            GetActiveRequests does not project it yet — the field's absence
+                                            renders nothing, so this is inert until the API sends it). */}
+                                        <ExclusiveInline item={item} />
 <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} small style={styles.slotTimeLabel} />
                                         <span className="t" style={sx(styles.skillText)}>{item.workerSkill || 'General'}</span>
+                                        <span className="t" style={sx(styles.skillText)}>
+                                            Selected skills: {Array.isArray(item.selectedSkills) && item.selectedSkills.length > 0 ? item.selectedSkills.join(', ') : 'Not specified'}
+                                        </span>
                                         <span className="t" style={sx([styles.subtextLabel, { color: subtextColor }])}>{subtext}</span>
                                     </div>
                                     <div className="v" style={sx(styles.actionCol)}>
@@ -321,6 +358,18 @@ const ActiveRequestScreen = ({ navigation }) => {
                                         )}
                                     </div>
                                 </div>
+
+                                {isExclusiveFullTime && (
+                                    <div className="v" style={sx(styles.exclusiveNotice)}>
+                                        <Icon name="lock-outline" size={17} color="#9A3412" />
+                                        <div className="v" style={sx(styles.exclusiveNoticeCopy)}>
+                                            <span className="t" style={sx(styles.exclusiveNoticeTitle)}>Exclusive full-time request</span>
+                                            <span className="t" style={sx(styles.exclusiveNoticeText)}>
+                                                The exclusive commitment starts only after you finalize hiring; this interview request alone does not lock the worker.
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })
@@ -452,6 +501,19 @@ const styles = StyleSheet.create({
         marginTop: 12,
     },
     jobTypeBadge: { marginTop: 6 },
+    exclusiveNotice: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        backgroundColor: '#FFF7ED',
+        borderColor: '#FDBA74',
+        borderWidth: 1,
+        borderRadius: 10,
+        padding: 10,
+        marginTop: 12,
+    },
+    exclusiveNoticeCopy: { flex: 1, marginLeft: 8 },
+    exclusiveNoticeTitle: { color: '#9A3412', fontWeight: '800', fontSize: 12.5 },
+    exclusiveNoticeText: { color: '#7C2D12', fontSize: 11.5, marginTop: 3, lineHeight: 16 },
   card: {
         backgroundColor: '#FFFFFF',
         borderRadius: 18,

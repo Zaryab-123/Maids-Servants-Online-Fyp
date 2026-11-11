@@ -6,6 +6,7 @@ import { API_DASHBOARD, SERVER_BASE } from '../../config';
 import NotificationHelper from '../Notification/NotificationHelper';
 import CriteriaReviewSection from '../helpers/CriteriaReviewSection';
 import CriteriaBreakdown from '../helpers/CriteriaBreakdown';
+import ReviewEndReason from '../helpers/ReviewEndReason';
 import { Alert, Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 import __img_logo_png from '../../images/logo.png';
 
@@ -250,6 +251,11 @@ const ResignationScreen = ({ route, navigation }) => {
                             <span className="t" style={sx(styles.reviewMetaDate)}>· {data.workerReview.date}</span>
                         </div>
 
+                        <ReviewEndReason
+                            endType={data.workerReview.endReasonType || data.workerReview.endType || data.status}
+                            reason={data.workerReview.endReason}
+                        />
+
                         {data.workerReview.comment ? (
                             <span className="t" style={sx(styles.reviewCommentQuoted)}>
                                 &quot;{data.workerReview.comment}&quot;
@@ -290,6 +296,11 @@ const ResignationScreen = ({ route, navigation }) => {
                                     <span className="t" style={sx(styles.reviewMetaDate)}>· {data.clientReview.date}</span>
                                 ) : null}
                             </div>
+
+                            <ReviewEndReason
+                                endType={data.clientReview?.endReasonType || data.clientReview?.endType || data.status}
+                                reason={data.clientReview?.endReason}
+                            />
 
                             {data.clientReview?.comment ? (
                                 <span className="t" style={sx(styles.reviewCommentQuoted)}>

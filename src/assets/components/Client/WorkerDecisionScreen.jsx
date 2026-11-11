@@ -5,6 +5,7 @@ import AsyncStorage from '@/web/AsyncStorage';
 import NotificationHelper from '../Notification/NotificationHelper';
 import { API_DASHBOARD, SERVER_BASE } from '../../config';
 import JobTypeBadge from '../helpers/JobTypeBadge';
+import { ExclusiveInline } from '../helpers/ExclusiveNotice';
 import SlotTimeLabel from '../helpers/SlotTimeLabel';
 import { Spinner, StyleSheet, changeText, imgSrc, press, sx } from '@/web';
 import __img_logo_png from '../../images/logo.png';
@@ -76,7 +77,8 @@ const WorkerDecisionScreen = ({ navigation }) => {
 
     const filteredDecisions = decisions.filter(item =>
         item.workerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.workerSkill?.toLowerCase().includes(searchQuery.toLowerCase())
+        item.workerCategory?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (Array.isArray(item.selectedSkills) && item.selectedSkills.some(skill => skill.toLowerCase().includes(searchQuery.toLowerCase())))
     );
 
     return (
@@ -104,7 +106,7 @@ const WorkerDecisionScreen = ({ navigation }) => {
                 <Icon name="magnify" size={22} color="#9CA3AF" style={{ marginRight: 8 }} />
                 <input className="input"
                     style={{ ...sx(styles.searchInput), '--ph': "#9CA3AF" }}
-                    placeholder="Search by Worker name"
+                    placeholder="Search by worker name or role"
                     
                     value={(searchQuery) ?? ''}
                     onChange={changeText(setSearchQuery)}
@@ -154,6 +156,7 @@ const WorkerDecisionScreen = ({ navigation }) => {
                                     <div className="v" style={sx(styles.nameBlock)}>
                                         <span className="t" style={sx(styles.workerName)}>{item.workerName}</span>
                                         <JobTypeBadge jobType={item.jobType} small style={styles.jobTypeBadge} />
+                                        <ExclusiveInline item={item} />
 <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} small style={styles.slotTimeLabel} />
                                         <div className="v" style={sx([
                                             styles.statusBadge,
@@ -184,7 +187,10 @@ const WorkerDecisionScreen = ({ navigation }) => {
                                         </span>
                                     )}
                                     <span className="t" style={sx(styles.infoText)}>
-                                        <span className="t" style={sx(styles.bold)}>Job Role</span>: {item.workerSkill}
+                                        <span className="t" style={sx(styles.bold)}>Job Role</span>: {item.workerCategory || 'General Assistant'}
+                                    </span>
+                                    <span className="t" style={sx(styles.infoText)}>
+                                        <span className="t" style={sx(styles.bold)}>Requested Skills</span>: {Array.isArray(item.selectedSkills) && item.selectedSkills.length > 0 ? item.selectedSkills.join(', ') : 'Not specified'}
                                     </span>
                                     <span className="t" style={sx(styles.infoText)}>
                                         <span className="t" style={sx(styles.bold)}>Address</span>: {item.address}

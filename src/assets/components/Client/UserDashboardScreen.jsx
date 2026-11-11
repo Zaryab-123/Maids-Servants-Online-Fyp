@@ -179,6 +179,14 @@ const UserDashboard = ({ navigation }) => {
           <SlotTimeLabel startTime={item.slotStartTime} endTime={item.slotEndTime} small />
         </div>
 
+        <div className="v" style={sx({ flexDirection: 'row', alignItems: 'flex-start', marginTop: 8, marginBottom: 8 })}>
+          <Icon name="briefcase-check-outline" size={15} color="#1E64D3" style={{ marginRight: 6, marginTop: 2 }} />
+          <span className="t" style={sx({ flex: 1, color: '#475569', fontSize: 12, lineHeight: 18 })}>
+            <span className="t" style={sx({ fontWeight: '800', color: '#0E1B4D' })}>Selected skills: </span>
+            {Array.isArray(item.selectedSkills) && item.selectedSkills.length > 0 ? item.selectedSkills.join(', ') : 'Not specified'}
+          </span>
+        </div>
+
         {/* Row 3 — where the job is */}
         <div className="v" style={sx(styles.locationRow)}>
           <Icon name="map-marker-outline" size={15} color="#E91E63" />

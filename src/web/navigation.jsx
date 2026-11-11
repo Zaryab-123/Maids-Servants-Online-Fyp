@@ -40,21 +40,63 @@ const homeForRole = () => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// RN `navigate()` semantics
+// ---------------------------------------------------------------------------
+// On React Navigation, navigate('X') goes BACK to X when X is already in the
+// stack (and updates its params); it does not push a duplicate. react-router
+// always pushes, which turns "pick skills → return to the booking screen" into
+// [Booking, Skills, Booking]. The two helpers below restore the RN behaviour:
+// a stack of visited entries, and a param hand-off for the entry we pop back to.
+
+const navStack = [];               // [{ key, path }] in visit order
+const pendingParams = new Map();   // path -> params, consumed by the next Screen
+
+const rememberLocation = (location) => {
+  if (!location || !location.key) return;
+  const idx = navStack.findIndex((e) => e.key === location.key);
+  if (idx >= 0) navStack.length = idx + 1;              // went back to an older entry
+  else navStack.push({ key: location.key, path: location.pathname });
+};
+
+const previousPath = () => navStack.length > 1 ? navStack[navStack.length - 2].path : null;
+
 const FocusContext = createContext({ focusKey: 'init', navigation: null, route: null });
 
 export function useNavigationObject(name) {
   const navigate = useNavigate();
   const location = useLocation();
   const listeners = useRef({ focus: new Set(), blur: new Set() });
-  const params = unpackParams(location.state);
+  rememberLocation(location);
+  // A popped-back entry keeps its own history state; hand-over params from the
+  // screen we just left are merged on top of it (RN does the same when you
+  // navigate() back to a screen with new params). Memoised so the object
+  // identity is stable for the screen's own effects.
+  const params = useMemo(() => {
+    const base = unpackParams(location.state);
+    const extra = pendingParams.get(location.pathname);
+    if (!extra) return base;
+    return { ...(base || {}), ...extra };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, location.pathname]);
 
   const navigation = useMemo(() => {
     const go = (screen, p, replace = false) =>
       navigate(pathFor(screen), { replace, state: packParams(p) });
     return {
       navigate: (screen, p) => {
-        if (typeof screen === 'object' && screen) return go(screen.name, screen.params);
-        return go(screen, p);
+        const target = typeof screen === 'object' && screen ? screen.name : screen;
+        const targetParams = typeof screen === 'object' && screen ? screen.params : p;
+        // RN: the screen underneath us is the one being asked for → return to it.
+        if (navStack.length > 1) {
+          const back = navStack[navStack.length - 2];
+          if (back && back.path === pathFor(target)) {
+            if (targetParams !== undefined) pendingParams.set(pathFor(target), targetParams);
+            navigate(-1);
+            return;
+          }
+        }
+        return go(target, targetParams);
       },
       push: (screen, p) => go(screen, p),
       replace: (screen, p) => go(screen, p, true),
@@ -108,6 +150,11 @@ export function Screen({ component: Component, name }) {
     window.scrollTo(0, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
+
+  // The popped-back entry has now been rendered with the handed-over params.
+  useEffect(() => {
+    pendingParams.delete(location.pathname);
+  }, [location.key, location.pathname]);
 
   return (
     <FocusContext.Provider value={{ focusKey, navigation, route }}>

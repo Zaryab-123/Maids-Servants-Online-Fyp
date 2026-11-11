@@ -2,7 +2,7 @@
  * Web platform layer – the single import surface used by converted screens.
  */
 export { sx, imgSrc, StyleSheet, RESIZE } from './style';
-export { Platform, Dimensions, Alert, PermissionsAndroid, Keyboard } from './platform';
+export { Platform, Dimensions, Alert, PermissionsAndroid, Keyboard, AppState, Linking } from './platform';
 export { Spinner, ScrollView, ListView, Dialog, Toggle, RefreshControl, TextBox } from './components';
 
 /** RN onPress → DOM onClick. Stops propagation so nested touchables behave

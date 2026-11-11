@@ -7,6 +7,7 @@ import { API_DASHBOARD, SERVER_BASE } from '../../config';
 import JobTypeBadge from '../helpers/JobTypeBadge';
 import SlotTimeLabel from '../helpers/SlotTimeLabel';
 import ResidenceBadge from '../helpers/ResidenceBadge';
+import ExclusiveNotice from '../helpers/ExclusiveNotice';
 import { Spinner, StyleSheet, imgSrc, press, sx } from '@/web';
 import __img_logo_png from '../../images/logo.png';
 
@@ -165,6 +166,8 @@ const AcceptedRequestScreen = ({ navigation }) => {
                                     small
                                 />
                             </div>
+
+                            <ExclusiveNotice item={item} variant="accepted" />
 
                             <div className="v" style={sx(styles.divider)} />
 

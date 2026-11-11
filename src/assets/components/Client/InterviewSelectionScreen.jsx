@@ -4,9 +4,9 @@ import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
 import NotificationHelper from '../Notification/NotificationHelper';
 import DateTimePicker from '@/web/DateTimePicker';
-import { SERVER_BASE, API_DASHBOARD } from '../../config';
+import { SERVER_BASE } from '../../config';
 import { jobTypeLabel } from '../helpers/JobTypeBadge';
-import { Platform, Spinner, StyleSheet, Toggle, press, sx } from '@/web';
+import { Alert, Platform, Spinner, StyleSheet, Toggle, press, sx } from '@/web';
 
 
 const toDateKey = (value) => {
@@ -18,6 +18,8 @@ const toDateKey = (value) => {
 
 const InterviewSelectionScreen = ({ navigation, route }) => {
     const { workerId, workerName } = route.params || {};
+    const initialPartTimeVerdict = route.params?.isPartTimeAvailable;
+    const hasInitialJobType = typeof initialPartTimeVerdict === 'boolean';
 
     const [date, setDate] = useState(new Date());
     const [mode, setMode] = useState('date');
@@ -29,11 +31,15 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
     const [slots, setSlots] = useState([]);
     const [slotsLoading, setSlotsLoading] = useState(true);
     const [hasSlots, setHasSlots] = useState(true);
-    const [isPartTime, setIsPartTime] = useState(false);
+    const [isPartTime, setIsPartTime] = useState(initialPartTimeVerdict === true);
+    const [jobTypeResolved, setJobTypeResolved] = useState(hasInitialJobType);
+    const [availabilityError, setAvailabilityError] = useState(false);
     const [isResidenceProvided, setIsResidenceProvided] = useState(false);
+    const [isExclusive, setIsExclusive] = useState(false);
     const [radius, setRadius] = useState(null);
     const [distanceKm, setDistanceKm] = useState(null);
     const [selectedSlotId, setSelectedSlotId] = useState(null);
+    const [selectedSkills, setSelectedSkills] = useState([]);
     const [isReady, setIsReady] = useState(false);
 
     const submittingRef = useRef(false);
@@ -73,6 +79,7 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
     const fetchSlots = useCallback(async () => {
         try {
             setSlotsLoading(true);
+            setAvailabilityError(false);
             const token = await AsyncStorage.getItem('userToken');
 
             const response = await fetch(
@@ -84,19 +91,26 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
                 const data = await response.json();
                 setSlots(Array.isArray(data.slots) ? data.slots : []);
                 setHasSlots(!!data.hasSlots);
-                setIsPartTime(!!data.isPartTimeAvailable);
+                if (typeof data.isPartTimeAvailable === 'boolean') {
+                    setIsPartTime(data.isPartTimeAvailable);
+                    setJobTypeResolved(true);
+                } else if (!hasInitialJobType) {
+                    setAvailabilityError(true);
+                }
                 setRadius(data.radius ?? null);
                 setDistanceKm(data.distanceKm ?? null);
             } else {
                 setSlots([]);
+                setAvailabilityError(true);
             }
         } catch (error) {
             console.error('Slot fetch error:', error);
             setSlots([]);
+            setAvailabilityError(true);
         } finally {
             setSlotsLoading(false);
         }
-    }, [workerId, dateKey]);
+    }, [workerId, dateKey, hasInitialJobType]);
 
     useEffect(() => {
         fetchSlots();
@@ -105,6 +119,26 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
     useEffect(() => {
         setSelectedSlotId(null);
     }, [dateKey]);
+
+    useEffect(() => {
+        // A reused navigation route must not carry one worker's skills to another worker.
+        setSelectedSkills([]);
+    }, [workerId]);
+
+    useEffect(() => {
+        if (!Array.isArray(route.params?.selectedSkills)) return;
+
+        const normalizedSkills = route.params.selectedSkills
+            .map(skill => ({
+                categoryId: Number(skill.categoryId ?? skill.CategoryId),
+                categoryName: skill.categoryName ?? skill.CategoryName ?? '',
+                skillsId: Number(skill.skillsId ?? skill.SkillsId),
+                skillName: skill.skillName ?? skill.SkillName ?? 'Skill'
+            }))
+            .filter(skill => skill.skillsId > 0);
+        setSelectedSkills(Array.from(new Map(normalizedSkills.map(skill => [skill.skillsId, skill])).values()));
+        navigation.setParams({ selectedSkills: undefined });
+    }, [route.params?.selectedSkills, navigation]);
 
     const onChange = (event, selectedDate) => {
         const currentDate = selectedDate || date;
@@ -125,17 +159,39 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
         showMode('time');
     };
 
-    const selectedSlot = slots.find((slot) => slot.id === selectedSlotId) || null;
-    const bookingBlockedBySlots = isPartTime && !slotsLoading && (!hasSlots || slots.length === 0);
-    const needsSlot = isPartTime && !bookingBlockedBySlots;
-    const canConfirm = isReady && !isLoading && !slotsLoading && !bookingBlockedBySlots && (!needsSlot || !!selectedSlot);
+    const goToSkills = () => {
+        navigation.navigate('SelectInterviewSkills', {
+            workerId,
+            workerName,
+            initialSelectedSkillIds: selectedSkills.map(skill => skill.skillsId)
+        });
+    };
 
-    const handleConfirmInterview = async () => {
-        // ignore the very first moments and every repeat tap while a request is in flight
+    const selectedSkillIds = selectedSkills.map(skill => Number(skill.skillsId)).filter(id => id > 0);
+    const selectedSkillSummary = selectedSkills
+        .map(skill => skill.categoryName ? `${skill.skillName} (${skill.categoryName})` : skill.skillName)
+        .join(', ');
+    const selectedSlot = slots.find((slot) => slot.id === selectedSlotId) || null;
+    const bookingBlockedBySlots = jobTypeResolved && isPartTime && !slotsLoading && (!hasSlots || slots.length === 0);
+    const needsSlot = isPartTime && !bookingBlockedBySlots;
+    const canConfirm = jobTypeResolved && isReady && !isLoading && !slotsLoading && !bookingBlockedBySlots && selectedSkillIds.length > 0 && (!needsSlot || !!selectedSlot);
+
+    const handleConfirmInterview = async (forceNonExclusive = false) => {
+        // Ignore early/fall-through taps and wait until the server's job-type
+        // verdict is known before sending any booking.
         if (!readyRef.current || submittingRef.current) return;
+        if (!jobTypeResolved) {
+            NotificationHelper.showError('Still checking whether this is a part-time or full-time booking. Please try again.');
+            return;
+        }
 
         if (bookingBlockedBySlots) {
             NotificationHelper.showError('This worker has not published any time slots yet.');
+            return;
+        }
+
+        if (selectedSkillIds.length === 0) {
+            NotificationHelper.showError('Please select at least one skill this worker offers.');
             return;
         }
 
@@ -143,6 +199,8 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
             NotificationHelper.showError('Please pick one of the worker\'s time slots.');
             return;
         }
+
+        const isForcedNonExclusive = forceNonExclusive === true;
 
         submittingRef.current = true;
         setIsLoading(true);
@@ -159,17 +217,23 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    WorkerId: workerId,
+                    WorkerId: parseInt(workerId, 10),
                     InterviewDate: localISOTime,
                     Address: clientAddress,
                     Status: 'Pending',
                     SlotId: isPartTime && selectedSlot ? selectedSlot.id : null,
-                    IsResidenceProvided: !isPartTime ? isResidenceProvided : false
+                    SelectedSkillIds: selectedSkillIds,
+                    IsResidenceProvided: !isPartTime ? isResidenceProvided : false,
+                    IsExclusive: !isPartTime && isExclusive && !isForcedNonExclusive
                 })
             });
 
             if (response.ok) {
                 const data = await response.json().catch(() => ({}));
+                const requestedExclusive = !isPartTime && isExclusive && !isForcedNonExclusive;
+                if (requestedExclusive && data.isExclusive !== true) {
+                    NotificationHelper.showError('The interview was created, but the server did not confirm exclusivity. Please verify the backend deployment before relying on this condition.');
+                }
                 const typeLabel = data.jobType ? jobTypeLabel(data.jobType) : '';
                 const slotLabel = isPartTime && selectedSlot
                     ? ` (${selectedSlot.startTime} - ${selectedSlot.endTime})`
@@ -180,7 +244,18 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
                 navigation.replace('UserDashboardScreen');
             } else {
                 const err = await response.json().catch(() => ({}));
-                NotificationHelper.showError(err.message || 'Failed to book interview.');
+                if (response.status === 409 && err.code === 'ACTIVE_FULL_TIME_JOB' && isExclusive && !isForcedNonExclusive) {
+                    Alert.alert(
+                        'Worker already has a full-time job',
+                        'You can continue with this worker without exclusivity, or find another worker.',
+                        [
+                            { text: 'Find another worker', style: 'cancel', onPress: () => navigation.navigate('FindServiceScreen') },
+                            { text: 'Proceed non-exclusive', onPress: () => handleConfirmInterview(true) }
+                        ]
+                    );
+                } else {
+                    NotificationHelper.showError(err.message || 'Failed to book interview.');
+                }
             }
         } catch (error) {
             console.error('Booking error:', error);
@@ -202,6 +277,28 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
 
             <div className="v scroll"  ><div className="v scroll-content" style={sx(styles.scrollContent)}>
                 <span className="t" style={sx(styles.subTitle)}>When do you need to interview {workerName}?</span>
+
+                {!jobTypeResolved && (
+                    <div className="v" style={sx(styles.typeCheckContainer)}>
+                        {slotsLoading ? (
+                            <>
+                                <Spinner size="small" color="#1E64D3" />
+                                <span className="t" style={sx(styles.typeCheckText)}>Checking booking type…</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="t" style={sx(styles.typeCheckText)}>
+                                    {availabilityError
+                                        ? 'Could not determine the booking type. Please try again.'
+                                        : 'Booking type is not available yet.'}
+                                </span>
+                                <button className="v btn" type="button" onClick={press(fetchSlots)} style={sx(styles.typeCheckRetry)}>
+                                    <span className="t" style={sx(styles.typeCheckRetryText)}>Retry</span>
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {isPartTime && (
                     <div className="v" style={sx(styles.typeBanner)}>
@@ -266,7 +363,7 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
                     <div className="v" style={sx(styles.pickerSection)}>
                         <span className="t" style={sx(styles.sectionHeading)}>Worker's Time Slots</span>
                         <span className="t" style={sx(styles.sectionHint)}>
-                            Choose the window you need {workerName} for on {date.toDateString()}.
+                            Choose a window for {date.toDateString()}. Each slot can be reserved by only one active interview at a time, even across different dates.
                         </span>
 
                         {slotsLoading ? (
@@ -325,7 +422,37 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
                     </div>
                 </div>
 
-                {!isPartTime && (
+                <div className="v" style={sx(styles.pickerSection)}>
+                    <span className="t" style={sx(styles.sectionHeading)}>Skills for this request</span>
+                    <span className="t" style={sx(styles.sectionHint)}>
+                        Choose one or more of the skills this worker has offered. At least one is required.
+                    </span>
+                    <button className="v btn" type="button" style={sx(styles.selectorCard)} onClick={press(goToSkills)} >
+                        <div className="v" style={sx(styles.iconCircleBlue)}>
+                            <Icon name="briefcase-check-outline" size={24} color="#1E64D3" />
+                        </div>
+                        <div className="v" style={sx(styles.selectorTextCol)}>
+                            <span className="t" style={sx(styles.selectorLabel)}>Worker-offered sub-skills</span>
+                            <span className="t" style={sx(styles.selectorValue)}>
+                                {selectedSkills.length > 0
+                                    ? `${selectedSkills.length} skill${selectedSkills.length === 1 ? '' : 's'} selected`
+                                    : 'Select skills'}
+                            </span>
+                        </div>
+                        <Icon name="chevron-right" size={24} color="#888" />
+                    </button>
+                    {selectedSkills.length > 0 ? (
+                        <span className="t" style={sx({ color: '#475569', fontSize: 13, lineHeight: 19, marginTop: 8, marginHorizontal: 5 })}>
+                            {selectedSkillSummary}
+                        </span>
+                    ) : (
+                        <span className="t" style={sx({ color: '#B45309', fontSize: 12, marginTop: 8, marginHorizontal: 5 })}>
+                            Select at least one skill before sending the request.
+                        </span>
+                    )}
+                </div>
+
+                {jobTypeResolved && !isPartTime && (
                     <div className="v" style={sx(styles.pickerSection)}>
                         <span className="t" style={sx(styles.sectionHeading)}>Residence Provision</span>
                         <div className="v" style={sx(styles.selectorCard)}>
@@ -348,24 +475,53 @@ const InterviewSelectionScreen = ({ navigation, route }) => {
                     </div>
                 )}
 
+                {jobTypeResolved && !isPartTime && (
+                    <div className="v" style={sx(styles.pickerSection)}>
+                        <span className="t" style={sx(styles.sectionHeading)}>Full-Time Exclusivity</span>
+                        <div className="v" style={sx(styles.selectorCard)}>
+                            <div className="v" style={sx(styles.iconCircleGreen)}>
+                                <Icon name="briefcase-lock-outline" size={24} color="#B45309" />
+                            </div>
+                            <div className="v" style={sx(styles.selectorTextCol)}>
+                                <span className="t" style={sx(styles.selectorLabel)}>Exclusive full-time work?</span>
+                                <span className="t" style={sx(styles.selectorValue)}>
+                                    {isExclusive
+                                        ? 'Worker will not accept other full-time work after you confirm hiring.'
+                                        : 'Worker may accept other work.'}
+                                </span>
+                            </div>
+                            <Toggle
+                                value={isExclusive}
+                                onValueChange={setIsExclusive}
+                                trackColor={{ false: '#D1D5DB', true: '#FCD34D' }}
+                                thumbColor={isExclusive ? '#D97706' : '#F3F4F6'}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 <div className="v" style={sx(styles.spacer)} />
             </div></div>
 
             <div className="v" style={sx(styles.footerContainer)}>
                 <button className="v btn" type="button"
                     style={sx([styles.confirmBtn, !canConfirm && styles.confirmBtnDisabled])}
-                    onClick={press(handleConfirmInterview)}
+                    onClick={press(() => handleConfirmInterview(false))}
                     disabled={!canConfirm}
                 >
                     {isLoading ? (
                         <Spinner color="#FFF" />
                     ) : (
                         <span className="t" style={sx(styles.confirmBtnText)}>
-                            {bookingBlockedBySlots
-                                ? 'No Slots Available'
-                                : needsSlot && !selectedSlot
-                                    ? 'Pick A Time Slot'
-                                    : 'Confirm Booking'}
+                            {!jobTypeResolved
+                                ? 'Checking Booking Type…'
+                                : bookingBlockedBySlots
+                                    ? 'No Slots Available'
+                                    : selectedSkillIds.length === 0
+                                        ? 'Select Skills'
+                                        : needsSlot && !selectedSlot
+                                            ? 'Pick A Time Slot'
+                                            : 'Confirm Booking'}
                         </span>
                     )}
                 </button>
@@ -396,6 +552,13 @@ const styles = StyleSheet.create({
     typeBannerText: { fontSize: 12, fontWeight: '800', color: '#B45309', marginLeft: 6 },
     typeBannerHint: { fontSize: 11, fontWeight: '700', color: '#B45309', marginLeft: 'auto' },
     typeBannerBody: { fontSize: 12, color: '#7C4A03', marginTop: 6, lineHeight: 17 },
+    typeCheckContainer: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        backgroundColor: '#EEF5FF', borderRadius: 12, padding: 12, marginBottom: 18,
+    },
+    typeCheckText: { fontSize: 13, color: '#36506C', marginLeft: 8, textAlign: 'center' },
+    typeCheckRetry: { marginLeft: 12, paddingHorizontal: 12, paddingVertical: 6 },
+    typeCheckRetryText: { color: '#1E64D3', fontWeight: '700' },
 
     pickerSection: { marginBottom: 25 },
     sectionHeading: { fontSize: 16, fontWeight: 'bold', color: '#000', marginBottom: 10, marginLeft: 5 },

@@ -2,22 +2,22 @@ import React, { useState, useEffect } from 'react';
 
 import Icon from '@/web/Icon';
 import AsyncStorage from '@/web/AsyncStorage';
-import { API_DASHBOARD } from '../../config';
+import { API_DASHBOARD, SERVER_BASE } from '../../config';
 import { Dialog, ListView, ScrollView, Spinner, StyleSheet, press, sx } from '@/web';
 
 
 const API_BASE = API_DASHBOARD;
 
-const RECOMMENDED_CITIES = [
-    'Islamabad', 'Rawalpindi', 'Lahore', 'Karachi', 
-    'Faisalabad', 'Peshawar', 'Multan', 'Quetta', 
-    'Gujranwala', 'Sialkot'
-];
+import { RECOMMENDED_CITIES, buildCityOptions, deriveCurrentCity } from '../helpers/cityOptions';
 
 const FilterationScreen = ({ navigation, route }) => {
+    // RN parity (FilterationScreen.js:42): the city the client is currently in.
+    // It pre-selects the filter so the list opens on that city's workers, and
+    // Reset returns to it. 'All' = no city restriction (the backend treats
+    // 'All' and an empty city identically).
+    const defaultCity = route.params?.defaultCity || deriveCurrentCity(route.params?.userAddress) || 'All';
     // States for dynamic data
     const [allCategories, setAllCategories] = useState([]);
-    const [workerAddresses, setWorkerAddresses] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
     // States for various filters
@@ -38,36 +38,26 @@ const FilterationScreen = ({ navigation, route }) => {
     // Initial load of categories
     useEffect(() => {
         fetchFilterData();
-        fetchWorkerAddresses();
         fetchHabits();
     }, []);
 
-    const fetchWorkerAddresses = async () => {
-        try {
-            const token = await AsyncStorage.getItem('userToken');
-            const response = await fetch(`${API_BASE}/GetWorkerAddresses`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-                const addresses = await response.json();
-                setWorkerAddresses(Array.isArray(addresses) ? addresses : []);
-            }
-        } catch (error) {
-            console.error('Worker addresses load failed:', error?.message);
-        }
-    };
-
-    const cityOptions = [...new Map(
-        [...RECOMMENDED_CITIES, ...workerAddresses, selectedCity]
-            .map(city => (city || '').trim())
-            .filter(Boolean)
-            .map(city => [city.toLocaleLowerCase(), city])
-    ).values()];
+    // RN parity: ['All', defaultCity (when custom), ...RECOMMENDED_CITIES].
+    // The selected city is folded in too so a value applied earlier never
+    // disappears from the list.
+    const cityOptions = (() => {
+        const options = buildCityOptions(defaultCity);
+        if (!selectedCity) return options;
+        const known = options.some(city => city.toLowerCase() === selectedCity.toLowerCase());
+        return known ? options : ['All', selectedCity, ...options.filter(c => c !== 'All')];
+    })();
 
     const fetchHabits = async () => {
         try {
             const token = await AsyncStorage.getItem('userToken');
-            const response = await fetch(`${API_BASE}/GetHabits`, {
+            // Client-filterable habits (HabitId / Name / ExclusiveGroup).
+            // Dashboard/GetHabits does not exist; the dedicated Habits action is
+            // what the React Native app uses and what the backend exposes.
+            const response = await fetch(`${SERVER_BASE}/api/Habits/GetClientFilterHabits`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) {
@@ -80,9 +70,22 @@ const FilterationScreen = ({ navigation, route }) => {
     };
 
     const toggleHabitFilter = (habitId) => {
-        setSelectedHabitIds((prev) =>
-            prev.includes(habitId) ? prev.filter((id) => id !== habitId) : [...prev, habitId]
-        );
+        const id = Number(habitId);
+        const target = habitsCatalog.find(item => (item.habitId ?? item.id) === id);
+        const targetGroup = target?.exclusiveGroup?.trim().toLowerCase();
+
+        setSelectedHabitIds((prev) => {
+            if (prev.includes(id)) return prev.filter(selectedId => selectedId !== id);
+            if (!targetGroup) return [...prev, id];
+
+            // Two habits in the same exclusive group can never both apply
+            // (e.g. vegetarian / non-vegetarian), so the new one replaces them.
+            const withoutSameGroup = prev.filter(selectedId => {
+                const selectedHabit = habitsCatalog.find(item => (item.habitId ?? item.id) === selectedId);
+                return selectedHabit?.exclusiveGroup?.trim().toLowerCase() !== targetGroup;
+            });
+            return [...withoutSameGroup, id];
+        });
     };
 
     // Sync initial filters when categories are loaded or when params change
@@ -90,7 +93,7 @@ const FilterationScreen = ({ navigation, route }) => {
         if (!isLoading && route.params?.initialFilters) {
             const { gender, city, categories, subSkills, habits } = route.params.initialFilters;
             setSelectedGender(gender || '');
-            setSelectedCity(city || '');
+            setSelectedCity(city || defaultCity || 'All');
             setSelectedHabitIds(Array.isArray(habits) ? habits : []);
             setSelectedSkills((categories || []).map(item => item?.toString ? item.toString() : item));
 
@@ -187,7 +190,7 @@ const FilterationScreen = ({ navigation, route }) => {
         navigation.navigate('FindServiceScreen', {
             appliedFilters: {
                 gender: selectedGender,
-                city: selectedCity,
+                city: selectedCity || defaultCity || 'All',
                 categories: selectedSkills,
                 subSkills: subFilters,
                 habits: selectedHabitIds
@@ -198,7 +201,7 @@ const FilterationScreen = ({ navigation, route }) => {
     const handleReset = () => {
         setSelectedGender('');
         setSelectedSkills([]);
-        setSelectedCity('');
+        setSelectedCity(defaultCity || 'All');
         setSelectedHabitIds([]);
         const resetSubFilters = {};
         allCategories.forEach(cat => {
@@ -210,7 +213,7 @@ const FilterationScreen = ({ navigation, route }) => {
         navigation.navigate('FindServiceScreen', {
             appliedFilters: {
                 gender: '',
-                city: '',
+                city: defaultCity || 'All',
                 categories: [],
                 subSkills: resetSubFilters,
                 habits: []

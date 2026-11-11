@@ -3,11 +3,14 @@ import React, { useState, useCallback, useRef } from 'react';
 import { useFocusEffect } from '@/web/navigation';
 
 import Icon from '@/web/Icon';
+import WorkerNotificationBell from '../helpers/WorkerNotificationBell';
 import AsyncStorage from '@/web/AsyncStorage';
 import DateTimePicker from '@/web/DateTimePicker';
 import NotificationHelper from '../Notification/NotificationHelper';
 import { SERVER_BASE, API_DASHBOARD } from '../../config';
 import ReviewCard from '../helpers/ReviewCard';
+import SkillRatingsGroup from '../helpers/SkillRatingsGroup';
+import { getWorkerPendingClientReviews } from '../helpers/workerResignationsApi';
 import { Alert, Dialog, Dimensions, ScrollView, Spinner, StyleSheet, Toggle, imgSrc, press, sx } from '@/web';
 
 
@@ -41,6 +44,21 @@ const WorkerDashboardScreen = ({ navigation }) => {
     const [reviewsAverage, setReviewsAverage] = useState(null); // from GetWorkerReviews
     const [reviewsCount, setReviewsCount] = useState(null);     // from GetWorkerReviews
     const [reviewsError, setReviewsError] = useState(false);    // request failed (vs. genuinely empty)
+    const [pendingClientReviews, setPendingClientReviews] = useState([]);
+
+    const fetchPendingClientReviews = async () => {
+        try {
+            const items = await getWorkerPendingClientReviews();
+            setPendingClientReviews(items);
+        } catch (error) {
+            setPendingClientReviews([]);
+            console.warn('Could not load pending resignation reviews:', error.message);
+            if (error.status === 401) {
+                NotificationHelper.showError("Session expired. Please login again.");
+                navigation.replace('Login');
+            }
+        }
+    };
 
     useFocusEffect(
         useCallback(() => {
@@ -50,6 +68,7 @@ const WorkerDashboardScreen = ({ navigation }) => {
 
     const fetchWorkerDetails = async () => {
         setIsLoading(true);
+        setPendingClientReviews([]);
         try {
             const workerId = await AsyncStorage.getItem('workerId');
             const token = await AsyncStorage.getItem('userToken');
@@ -76,6 +95,7 @@ const WorkerDashboardScreen = ({ navigation }) => {
                 if (data.radius) setSelectedRadius(`${data.radius} km`);
                 fetchTimeSlots(workerId);
                 fetchWorkerReviews(workerId);
+                fetchPendingClientReviews();
             } else if (response.status === 401) {
                 NotificationHelper.showError("Session expired. Please login again.");
                 navigation.replace('Login');
@@ -300,6 +320,23 @@ const WorkerDashboardScreen = ({ navigation }) => {
         });
     };
 
+    const handleViewPoliceCharacterCertificate = () => {
+        const workerId = Number(worker?.id || worker?.workerId || worker?.WorkerId);
+        if (!Number.isSafeInteger(workerId) || workerId <= 0) {
+            NotificationHelper.showError('Worker profile unavailable. Please reload the dashboard.');
+            return;
+        }
+        navigation.navigate('CharacterCertificateScreen', { workerId, viewerRole: 'Worker' });
+    };
+
+    const handleReviewPendingClient = () => {
+        const nextReview = pendingClientReviews[0];
+        if (!nextReview) return;
+        navigation.navigate('WorkerResignationReviewScreen', {
+            resignationId: nextReview.resignationId,
+        });
+    };
+
     const handleDutyToggle = async (value) => {
         setIsDutyOn(value);
         try {
@@ -369,6 +406,7 @@ const WorkerDashboardScreen = ({ navigation }) => {
                     </div>
 
                     <div className="v" style={sx(styles.headerRightActions)}>
+                        <WorkerNotificationBell navigation={navigation} />
                         <button className="v btn" type="button" style={sx(styles.pillEditBtn)} onClick={press(handleEditProfile)}>
                             <Icon name="square-edit-outline" size={16} color="#555" />
                             <span className="t" style={sx(styles.pillEditBtnText)}>Edit</span>
@@ -566,6 +604,48 @@ const WorkerDashboardScreen = ({ navigation }) => {
                         </div>
                     </button>
 
+                    <button className="v btn" type="button"
+                        data-testid="worker-police-character-certificate"
+                        
+                        aria-label="View your police character certificate"
+                        style={sx(styles.notifCard)}
+                        onClick={press(handleViewPoliceCharacterCertificate)}
+                    >
+                        <div className="v" style={sx([styles.iconCircleBg, { backgroundColor: '#ECFDF5' }])}>
+                            <Icon name="shield-check-outline" size={20} color="#0F766E" />
+                        </div>
+                        <div className="v" style={sx({ flex: 1, marginLeft: 12 })}>
+                            <span className="t" style={sx(styles.notifTitle)}>Police Character Certificate</span>
+                            <span className="t" style={sx(styles.notifSub)}>View your current certificate and its validity</span>
+                        </div>
+                        <Icon name="chevron-right" size={18} color="#94A3B8" />
+                    </button>
+
+                    {pendingClientReviews.length > 0 ? (
+                        <button className="v btn" type="button"
+                            data-testid="worker-review-client"
+                            
+                            aria-label={`Rate your client. ${pendingClientReviews.length} accepted resignation${pendingClientReviews.length === 1 ? '' : 's'} awaiting review.`}
+                            style={sx(styles.notifCard)}
+                            onClick={press(handleReviewPendingClient)}
+                        >
+                            <div className="v" style={sx([styles.iconCircleBg, { backgroundColor: '#F5F3FF' }])}>
+                                <Icon name="star-outline" size={20} color="#7C3AED" />
+                            </div>
+                            <div className="v" style={sx({ flex: 1, marginLeft: 12 })}>
+                                <span className="t" style={sx(styles.notifTitle)}>
+                                    Rate your client{pendingClientReviews.length > 1 ? ` (${pendingClientReviews.length} pending)` : ''}
+                                </span>
+                                <span className="t" style={sx(styles.notifSub)}>
+                                    {pendingClientReviews.length === 1
+                                        ? `${pendingClientReviews[0].clientName || 'Your client'} accepted your resignation. Leave a review.`
+                                        : 'Review clients from your accepted resignations, one at a time.'}
+                                </span>
+                            </div>
+                            <Icon name="chevron-right" size={18} color="#94A3B8" />
+                        </button>
+                    ) : null}
+
                     {/* Employment Actions & Termination Buttons */}
                     <div className="v" style={sx(styles.actionCard)}>
                         <div className="v" style={sx(styles.sectionHeader)}>
@@ -631,30 +711,17 @@ const WorkerDashboardScreen = ({ navigation }) => {
 
                         <div className="v" style={sx(styles.divider)} />
 
-                        <span className="t" style={sx({ color: '#172033', fontSize: 14, fontWeight: '800', marginBottom: 4 })}>
-                            Primary Service
-                        </span>
-                        <span className="t" style={sx({ color: '#64748B', fontSize: 12, marginBottom: 12 })}>
-                            Your main professional category
-                        </span>
-                        <div className="v" style={sx({ alignSelf: 'flex-start', backgroundColor: '#1565C0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 14 })}>
-                            <span className="t" style={sx({ color: '#FFFFFF', fontWeight: '800' })}>
-                                {worker.role || 'General Worker'}
-                            </span>
-                        </div>
-
-                        <span className="t" style={sx({ color: '#172033', fontSize: 14, fontWeight: '800', marginBottom: 9 })}>
-                            Primary Skills
-                        </span>
-                        {worker.primarySkills && worker.primarySkills.length > 0 ? (
-                            <div className="v" style={sx({ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 })}>
-                                {worker.primarySkills.map((skill, index) => (
-                                    <div className="v" key={`${skill}-${index}`} style={sx({ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF3FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 18, paddingHorizontal: 11, paddingVertical: 7 })}>
-                                        <Icon name="check-decagram" size={14} color="#1565C0" />
-                                        <span className="t" style={sx({ color: '#0D47A1', fontWeight: '700', fontSize: 12, marginLeft: 5 })}>{skill}</span>
-                                    </div>
-                                ))}
-                            </div>
+                        {((worker.primarySkillRatings && worker.primarySkillRatings.length > 0) ||
+                            (worker.primarySkills && worker.primarySkills.length > 0)) ? (
+                            <SkillRatingsGroup
+                                categoryLabel="Primary service"
+                                categoryName={worker.primaryCategoryName || worker.role || 'General Worker'}
+                                averageRating={worker.primaryCategoryAverageRating}
+                                ratingCount={worker.primaryCategoryRatingCount}
+                                skills={worker.primarySkillRatings && worker.primarySkillRatings.length > 0
+                                    ? worker.primarySkillRatings
+                                    : (worker.primarySkills || [])}
+                            />
                         ) : (
                             <span className="t" style={sx([styles.emptyText, { textAlign: 'left', marginBottom: 18 }])}>No primary skills added.</span>
                         )}
@@ -669,21 +736,16 @@ const WorkerDashboardScreen = ({ navigation }) => {
 
                         {worker.partTimeSkills && worker.partTimeSkills.length > 0 ? (
                             worker.partTimeSkills.map((group, groupIndex) => (
-                                <div className="v" key={`${group.categoryName}-${groupIndex}`} style={sx({ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 13, padding: 12, marginBottom: 10 })}>
-                                    <div className="v" style={sx({ flexDirection: 'row', alignItems: 'center', marginBottom: 9 })}>
-                                        <Icon name="briefcase-outline" size={17} color="#1565C0" />
-                                        <span className="t" style={sx({ color: '#172033', fontWeight: '800', marginLeft: 7 })}>
-                                            {group.categoryName || 'Additional Service'}
-                                        </span>
-                                    </div>
-                                    <div className="v" style={sx({ flexDirection: 'row', flexWrap: 'wrap', gap: 7 })}>
-                                        {(group.skills || []).map((skill, index) => (
-                                            <div className="v" key={`${skill}-${index}`} style={sx({ backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D9E5F3', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 })}>
-                                                <span className="t" style={sx({ color: '#475569', fontSize: 12, fontWeight: '600' })}>{skill}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                <SkillRatingsGroup
+                                    key={group.categoryId || group.categoryName || groupIndex}
+                                    categoryLabel="Part-time category"
+                                    categoryName={group.categoryName}
+                                    averageRating={group.averageRating}
+                                    ratingCount={group.ratingCount}
+                                    skills={group.skillRatings && group.skillRatings.length > 0
+                                        ? group.skillRatings
+                                        : (group.skills || [])}
+                                />
                             ))
                         ) : (
                             <div className="v" style={sx({ alignItems: 'center', paddingVertical: 24 })}>
@@ -787,6 +849,7 @@ const WorkerDashboardScreen = ({ navigation }) => {
                                     workedPeriod={item.workedPeriod}
                                     endType={item.endType}
                                     criteria={item.criteria}
+                                    skillRatings={item.skillRatings}
                                     text={item.comment || item.reviewText || ''}
                                 />
                             ))
